@@ -80,7 +80,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.code == 'true' && needs.changes.outputs.scope == 'true'
-    container: debian:trixie
+    # The proofs mount synthetic sysfs and rules inside private namespaces.
+    container:
+      image: debian:trixie
+      options: --privileged
+    env:
+      REQUIRE_UDEV_PROOFS: "1"
     steps:
       # git is needed by actions/checkout; devscripts/dpkg-dev provide dch +
       # dpkg-parsechangelog for the version-injection path; ccache is the C-build cache
@@ -102,7 +107,9 @@ jobs:
             ccache-${{ runner.os }}-trixie-
 
       - name: Run packaging contract lane
-        run: bash packaging/ci/contract.sh
+        run: |
+          bash packaging/ci/test-required-udev-proofs.sh
+          bash packaging/ci/contract.sh
 
   # The one check a branch-protection rule can require. It runs on every event,
   # including a pull request outside this lane's scope where the gate above

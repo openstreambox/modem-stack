@@ -72,32 +72,11 @@ else
 	echo "  ok: companion udev rules are identification/tagging only"
 fi
 
-# What the rules MATCH, with the real `udevadm test` against a fake sysfs (it re-executes
-# itself in an unprivileged user + mount namespace). 77 means this environment cannot run it.
+# Execute both real namespace proofs. Local environments may skip; CI must not.
 echo "  running companion udev match proofs..."
-set +e
-match_out="$(bash "$HERE/test-companion-udev-match.sh" 2>&1)"
-match_rc=$?
-set -e
-if [ "$match_rc" -eq 0 ]; then
-	echo "  ok: companion udev rules match exactly the intended devices and ports"
-elif [ "$match_rc" -eq 77 ]; then
-	echo "  SKIPPED (environment): $match_out"
-else
-	echo "$match_out"
-	fail=1
-fi
-
+bash "$HERE/run-udev-proof.sh" "$HERE/test-companion-udev-match.sh" || fail=1
 echo "  running companion udev empty-/run proof..."
-set +e
-bash "$HERE/test-companion-udev-empty-run.sh"
-empty_run_rc=$?
-set -e
-if [ "$empty_run_rc" -eq 77 ]; then
- echo "  SKIP: empty-/run proof unavailable"
-elif [ "$empty_run_rc" -ne 0 ]; then
- exit "$empty_run_rc"
-fi
+bash "$HERE/run-udev-proof.sh" "$HERE/test-companion-udev-empty-run.sh" || fail=1
 
 # The packaged basename must not collide with an image-owned /etc/udev/rules.d basename: udev
 # resolves by basename and an /etc file shadows the packaged one in a way dpkg -S cannot see.
