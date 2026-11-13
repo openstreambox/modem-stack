@@ -178,7 +178,7 @@ ModemManager 1.24 exposes **no vendor `conf.d` tier** — verified against the p
 packaging, whose only `/etc` surface is the D-Bus policy file. Its documented per-device
 configuration mechanism is udev properties, so CeraLive's MM-directed configuration rides
 the packaged rules file rather than a conf snippet. The one such property today is
-`ID_MM_PORT_IGNORE=1` on the tty of USB interface 3 of the Quectel RM520N-GL (`2c7c:0801`),
+`ID_MM_PORT_IGNORE=1` on the tty of USB interface 3 of the Quectel RM520N-GL / RM530N-GL (shared `2c7c:0801`),
 ModemManager's secondary AT port. ModemManager then lists that port as `(ignored)` and never
 opens it, keeping the primary AT, control and data ports, so read-only consumers can query
 `AT+QTEMP` and `AT+QENG="servingcell"` there without debug mode or inhibition (stock

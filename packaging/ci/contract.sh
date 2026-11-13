@@ -88,6 +88,17 @@ else
 	fail=1
 fi
 
+echo "  running companion udev empty-/run proof..."
+set +e
+bash "$HERE/test-companion-udev-empty-run.sh"
+empty_run_rc=$?
+set -e
+if [ "$empty_run_rc" -eq 77 ]; then
+ echo "  SKIP: empty-/run proof unavailable"
+elif [ "$empty_run_rc" -ne 0 ]; then
+ exit "$empty_run_rc"
+fi
+
 # The packaged basename must not collide with an image-owned /etc/udev/rules.d basename: udev
 # resolves by basename and an /etc file shadows the packaged one in a way dpkg -S cannot see.
 echo "  running companion udev basename contract..."

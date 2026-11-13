@@ -59,7 +59,7 @@ tty_on() {
 	echo "/sys/devices/pci0000:00/usb2/$1/$1:1.$2/$n/tty/$n"
 }
 
-usb_device 2c7c 0801 2-1 # RM520N-GL
+usb_device 2c7c 0801 2-1 # RM520N-GL / RM530N-GL (shared PID)
 usb_device 2c7c 0800 2-2 # another Quectel PID
 usb_device 1e0e 9001 2-3 # SIM7600G-H, a tagged SKU of this file
 rm520_if0="$(tty_on 2-1 0)"
@@ -70,6 +70,10 @@ other_if3="$(tty_on 2-2 3)"
 simcom_if3="$(tty_on 2-3 3)"
 
 mount --bind "$SYS" /sys
+# A container may install udev without a writable runtime database.
+if [ ! -d /run/udev ]; then
+ mount -t tmpfs tmpfs /run || { echo "SKIP: cannot isolate /run"; exit 77; }
+fi
 for d in /etc/udev/rules.d /usr/lib/udev/rules.d /lib/udev/rules.d /usr/local/lib/udev/rules.d /run/udev; do
 	[ -d "$d" ] && mount -t tmpfs tmpfs "$d"
 done
@@ -97,7 +101,7 @@ expect_lacks "another SKU's interface 3 is untouched" add "$simcom_if3" "ID_MM_P
 expect_lacks "a remove event sets nothing" remove "$rm520_if3" "ID_MM_PORT_IGNORE"
 expect_lacks "the interface number stays a private (dot) property" add "$rm520_if3" "CERALIVE_USBIFNUM"
 expect_has "RM520 USB device keeps its identification tag" add /sys/devices/pci0000:00/usb2/2-1 "ID_CERALIVE_MODEM=1"
-expect_has "RM520 USB device keeps its SKU tag" add /sys/devices/pci0000:00/usb2/2-1 "ID_CERALIVE_MODEM_SKU=quectel-rm530n-gl"
+expect_has "RM520 USB device keeps its SKU tag" add /sys/devices/pci0000:00/usb2/2-1 "ID_CERALIVE_MODEM_SKU=quectel-rm520n-rm530n-gl"
 expect_lacks "the USB device itself is not released" add /sys/devices/pci0000:00/usb2/2-1 "ID_MM_PORT_IGNORE"
 
 if [ "$fail" -eq 0 ]; then echo "PASS: companion udev matches"; else echo "FAIL: companion udev matches"; exit 1; fi

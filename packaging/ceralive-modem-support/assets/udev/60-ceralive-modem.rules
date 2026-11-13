@@ -31,7 +31,7 @@
 #   ID_CERALIVE_MODEM_SKU=<sku>        — stable, human-readable SKU token
 #
 # Property published for ModemManager (its documented per-port configuration mechanism):
-#   ID_MM_PORT_IGNORE=1                — on the RM520N-GL's second AT port only; see the
+#   ID_MM_PORT_IGNORE=1                — on the RM520N-GL / RM530N-GL's second AT port only; see the
 #                                        "ModemManager port release" section below
 #
 # `zerocd` marks a mass-storage "Zero-CD" personality that usb-modeswitch is expected to
@@ -41,9 +41,9 @@ ACTION!="add|bind|change", GOTO="ceralive_modem_end"
 SUBSYSTEM!="usb", GOTO="ceralive_modem_iface"
 
 # ── Cellular modems (native modem compositions) ──────────────────────────────
-# Quectel RM530N-GL (5G, QMI/MBIM)
+# Quectel RM520N-GL / RM530N-GL (shared 2c7c:0801, 5G, QMI/MBIM)
 ATTR{idVendor}=="2c7c", ATTR{idProduct}=="0801", \
-  ENV{ID_CERALIVE_MODEM}="1", ENV{ID_CERALIVE_MODEM_CLASS}="cellular", ENV{ID_CERALIVE_MODEM_SKU}="quectel-rm530n-gl"
+  ENV{ID_CERALIVE_MODEM}="1", ENV{ID_CERALIVE_MODEM_CLASS}="cellular", ENV{ID_CERALIVE_MODEM_SKU}="quectel-rm520n-rm530n-gl"
 
 # SIMCom SIM7600G-H R2 (LTE Cat-4, QMI)
 ATTR{idVendor}=="1e0e", ATTR{idProduct}=="9001", \
@@ -100,7 +100,7 @@ SUBSYSTEM=="net", ENV{ID_CERALIVE_MODEM}=="1", \
   ENV{ID_CERALIVE_MODEM_PORT}="net"
 
 # ── ModemManager port release (tty) ──────────────────────────────────────────
-# Quectel RM520N-GL (2c7c:0801): USB interface 3 is ModemManager's SECONDARY AT port
+# Quectel RM520N-GL / RM530N-GL (shared 2c7c:0801): USB interface 3 is ModemManager's SECONDARY AT port
 # (its own 77-mm-quectel-port-types.rules: 0 QCDM, 1 GPS, 2 AT primary, 3 AT secondary).
 # ID_MM_PORT_IGNORE makes ModemManager skip probing that one tty and list it as
 # "(ignored)"; it keeps the primary AT port, the QMI/MBIM control port and the data
