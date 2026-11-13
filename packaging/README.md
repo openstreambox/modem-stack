@@ -156,6 +156,7 @@ carry is a separate exception and moves none of those assets into ModemManager.
 | Asset class | Owner | Why |
 |---|---|---|
 | CeraLive modem udev rules (identification/tagging only) | **companion** | generic; exact VID:PID + interface predicates, no device mutation |
+| ModemManager port release (`ID_MM_PORT_IGNORE` on one port of an exact VID:PID) | **companion** | generic; an ENV property ModemManager reads, no device mutation |
 | usb-modeswitch Zero-CD device data | **companion** | generic; mass-storage → modem composition only |
 | FCC policy-reconciliation helper + its oneshot unit | **companion** | generic; reads an operator policy at runtime |
 | Active FCC-unlock scripts | **nobody (none ship)** | todo 33: authored scripts ship inactive and activate only via the opt-in symlink |
@@ -176,7 +177,13 @@ carry is a separate exception and moves none of those assets into ModemManager.
 ModemManager 1.24 exposes **no vendor `conf.d` tier** — verified against the pinned Debian
 packaging, whose only `/etc` surface is the D-Bus policy file. Its documented per-device
 configuration mechanism is udev properties, so CeraLive's MM-directed configuration rides
-the packaged rules file rather than a conf snippet. ModemManager's own available FCC-unlock
+the packaged rules file rather than a conf snippet. The one such property today is
+`ID_MM_PORT_IGNORE=1` on the tty of USB interface 3 of the Quectel RM520N-GL (`2c7c:0801`),
+ModemManager's secondary AT port. ModemManager then lists that port as `(ignored)` and never
+opens it, keeping the primary AT, control and data ports, so read-only consumers can query
+`AT+QTEMP` and `AT+QENG="servingcell"` there without debug mode or inhibition (stock
+ModemManager refuses `mmcli --command` outside debug mode). Those consumers must check the
+property and that no process holds the port before opening it, and never send a setter. ModemManager's own available FCC-unlock
 tier (`/usr/share/ModemManager/fcc-unlock.available.d`) receives nothing from this package.
 
 ### The FCC-unlock tiers, and which one the reconciler owns
@@ -225,6 +232,12 @@ A clean chroot has no sysfs devices and no running daemons, so the contract is s
   override-removal branches, the FCC absent/enabled/opt-out/malformed/foreign-file matrix
   (against the real `/etc` admin tier and `<vid>:<pid>` keys), upgrade with no
   conffile prompt, downgrade, and purge-with-zero-leftovers.
+* **MATCH stage** — [`ci/test-companion-udev-match.sh`](ci/test-companion-udev-match.sh),
+  run from `contract.sh` wherever `udevadm` and unprivileged user namespaces exist: the
+  real `udevadm test` against a generated fake sysfs, with only the packaged rules file
+  installed, proves which devices and ports get which properties (the RM520's interface 3
+  released; interfaces 0–2, other PIDs and other SKUs untouched; identification tags kept).
+  It exits 77, reported as a skip, where the environment cannot run it.
 * **CONSUMER stage** — bench-board only: `udevadm test` against a real modem's sysfs path,
   `usb_modeswitch -c`, `systemd-analyze verify` + `systemctl is-enabled` + a real boot's
   journal proving `ceralive-migrate-data → fcc-reconcile → ModemManager`, and ModemManager's
@@ -287,6 +300,7 @@ closed naming that source. The migration-continuity chain
 | [`ci/daemon-smoke.sh`](ci/daemon-smoke.sh) | The **daemon smoke**. `daemon-smoke.sh <amd64\|arm64>` installs system D-Bus + polkit + NetworkManager (trixie 1.52.1) and the built MM debs, starts a system `dbus-daemon` + `ModemManager`, then asserts: `busctl introspect` shows the root `ObjectManager`; `mmcli --version` matches the **pinned** ModemManager upstream version (via `ci/read-pin.sh`, never hardcoded); the udev-rules + FCC-unlock dispatcher dirs exist; and — **functional GI validation**, not presence-only (it installs `python3-gi valac build-essential pkg-config`) — the `gir1.2-modemmanager-1.0` typelib **loads** through PyGObject (`gi.require_version('ModemManager','1.0')` + a real `ModemManager.ModemCapability.LTE` enum read) and the `libmm-glib` `.vapi` **compiles+links** via `valac -C` → `cc $(pkg-config --cflags --libs mm-glib)` against a Vala program that genuinely calls a libmm-glib symbol (a broken/absent GI adaptation fails closed here). amd64 by default. |
 | [`ci/build-companion.sh`](ci/build-companion.sh) | Builds the first-party `ceralive-modem-support` companion `.deb` — ONCE, `Architecture: all`, into `build/all/`. Container by default (`debian:$TARGET_SUITE`, default `trixie`), `--native` for the local QA loop. `RELEASE_VERSION=vX.Y.Z` → Version `X.Y.Z` (unset → `0.0.0~dev`), injected into a COPY of the changelog. Fails closed if the produced deb's `Architecture` is not `all` or its `Version` is not the requested one. |
 | [`ci/test-fcc-reconcile.sh`](ci/test-fcc-reconcile.sh) | The FCC reconciler's **behaviour** contract, runnable on any host with no container and no root: every path is redirected into a scratch tree via `CERALIVE_FCC_{POLICY_FILE,AVAILABLE_DIR,ACTIVE_DIR}`. Covers absent/malformed/opt-out/idempotence, the one-model policy that must not parse as empty, the refused vendor-only key, an enabled model MM ships no script for, and both foreign-entry cases (a real file and a symlink pointing outside the available tier). Complements — never replaces — the chroot contract, which proves the same logic from the PACKAGED location after a real `dpkg` install. |
+| [`ci/test-companion-udev-match.sh`](ci/test-companion-udev-match.sh) | The companion's **MATCH-stage** udev proof: the real `udevadm test` against a generated fake sysfs inside an unprivileged user + mount namespace, with only `60-ceralive-modem.rules` installed. Exit 77 = environment cannot run it. |
 | [`ci/test-companion-chroot.sh`](ci/test-companion-chroot.sh) | The companion's **CHROOT-stage** contract in a clean `debian:trixie` container: install / declared-inventory equality / chroot guard (+ non-vacuity) / single-owner `dpkg -S` / `/etc` override precedence / both override-removal branches / FCC absent-enabled-malformed matrix / upgrade with no conffile prompt / downgrade / purge with zero leftovers. Builds 0.9.0 and 1.1.0 so the upgrade and downgrade legs exercise real dpkg. The consumer stage is bench-gated. |
 | [`ci/companion-inventory.txt`](ci/companion-inventory.txt) | The companion's frozen declared file inventory, compared for EQUALITY by the chroot QA — an added, dropped or relocated asset fails the gate naming itself. |
 | [`ci/generate-release-manifest.sh`](ci/generate-release-manifest.sh) | Emits the **manifest-complete per-release manifest** (`generate-release-manifest.sh <tag>` → `dist/release-manifest.txt`): a checksum row for **every** built deb (both arches), the 9-package runtime closure MARKED (`role=runtime`, the rest `role=aux`) — the `build_arch package source version role filename sha256` matrix Phase-B apt publication AND `create-release` asset reconciliation consume. Emits **`closure_version: 2`** — the versioned contract apt-worker validates against — which adds the `Architecture: all` companion as ONE row with `build_arch` `all`, alongside the unchanged 9 × 2 arch-dependent rows. Build architecture and index membership are separate: `all` enters EVERY index arch, anything else its own. Per-source equality is scoped by `[arch-all sources]` so `build/all` is checked against the companion only and `build/<arch>` against the four upstream sources only. Fails closed on any set drift. dpkg-free (filename parse + `sha256sum`), so it runs anywhere. Emits **`suffix_scheme: per-source-counter`** and NO `deb_version_suffix:` — under per-source rebuild counters no single suffix value is truthful, so the header states the scheme and each row keeps carrying its own version (apt-worker's validator reads neither field). |

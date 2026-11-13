@@ -24,6 +24,12 @@ image-owned basename, and never ship an `/etc` copy from this package. A stale s
 `/etc` override is removed on upgrade ONLY when marker AND sha256 identify a known generated
 payload; anything unknown or operator-modified is preserved.
 
+**One MM-directed property.** The rules file also sets `ID_MM_PORT_IGNORE=1` (ENV only) on
+the tty of USB interface 3 of `2c7c:0801`, ModemManager's secondary AT port, so read-only
+consumers can query temperature and serving cell there without ModemManager's debug mode
+or inhibition. Keep it to that exact VID:PID and interface; `ci/test-companion-udev-match.sh`
+proves the match with the real `udevadm test` against a fake sysfs.
+
 QA is two-stage and the split is deliberate: `packaging/ci/test-companion-chroot.sh` proves
 packaging SHAPE in a clean `debian:trixie` container, while the consumer proofs (`udevadm
 test` against a real modem, `usb_modeswitch -c`, unit ordering against a real boot journal)
