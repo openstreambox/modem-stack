@@ -72,6 +72,12 @@ else
 	echo "  ok: companion udev rules are identification/tagging only"
 fi
 
+# Execute both real namespace proofs. Local environments may skip; CI must not.
+echo "  running companion udev match proofs..."
+bash "$HERE/run-udev-proof.sh" "$HERE/test-companion-udev-match.sh" || fail=1
+echo "  running companion udev empty-/run proof..."
+bash "$HERE/run-udev-proof.sh" "$HERE/test-companion-udev-empty-run.sh" || fail=1
+
 # The packaged basename must not collide with an image-owned /etc/udev/rules.d basename: udev
 # resolves by basename and an /etc file shadows the packaged one in a way dpkg -S cannot see.
 echo "  running companion udev basename contract..."

@@ -30,6 +30,10 @@
 #   ID_CERALIVE_MODEM_CLASS=<class>    — cellular | router | zerocd
 #   ID_CERALIVE_MODEM_SKU=<sku>        — stable, human-readable SKU token
 #
+# Property published for ModemManager (its documented per-port configuration mechanism):
+#   ID_MM_PORT_IGNORE=1                — on the RM520N-GL / RM530N-GL's second AT port only; see the
+#                                        "ModemManager port release" section below
+#
 # `zerocd` marks a mass-storage "Zero-CD" personality that usb-modeswitch is expected to
 # flip into a modem composition; see /usr/share/usb_modeswitch/ in this package.
 
@@ -37,9 +41,9 @@ ACTION!="add|bind|change", GOTO="ceralive_modem_end"
 SUBSYSTEM!="usb", GOTO="ceralive_modem_iface"
 
 # ── Cellular modems (native modem compositions) ──────────────────────────────
-# Quectel RM530N-GL (5G, QMI/MBIM)
+# Quectel RM520N-GL / RM530N-GL (shared 2c7c:0801, 5G, QMI/MBIM)
 ATTR{idVendor}=="2c7c", ATTR{idProduct}=="0801", \
-  ENV{ID_CERALIVE_MODEM}="1", ENV{ID_CERALIVE_MODEM_CLASS}="cellular", ENV{ID_CERALIVE_MODEM_SKU}="quectel-rm530n-gl"
+  ENV{ID_CERALIVE_MODEM}="1", ENV{ID_CERALIVE_MODEM_CLASS}="cellular", ENV{ID_CERALIVE_MODEM_SKU}="quectel-rm520n-rm530n-gl"
 
 # SIMCom SIM7600G-H R2 (LTE Cat-4, QMI)
 ATTR{idVendor}=="1e0e", ATTR{idProduct}=="9001", \
@@ -94,5 +98,22 @@ SUBSYSTEM=="usbmisc", KERNEL=="cdc-wdm[0-9]*", ENV{ID_CERALIVE_MODEM}=="1", \
 # WWAN netdevs belonging to a tagged parent.
 SUBSYSTEM=="net", ENV{ID_CERALIVE_MODEM}=="1", \
   ENV{ID_CERALIVE_MODEM_PORT}="net"
+
+# ── ModemManager port release (tty) ──────────────────────────────────────────
+# Quectel RM520N-GL / RM530N-GL (shared 2c7c:0801): USB interface 3 is ModemManager's SECONDARY AT port
+# (its own 77-mm-quectel-port-types.rules: 0 QCDM, 1 GPS, 2 AT primary, 3 AT secondary).
+# ID_MM_PORT_IGNORE makes ModemManager skip probing that one tty and list it as
+# "(ignored)"; it keeps the primary AT port, the QMI/MBIM control port and the data
+# port. The released port is for read-only consumers (temperature via AT+QTEMP, serving
+# cell via AT+QENG="servingcell") that open it only after checking this property is
+# set and no process holds the port; they never send a setter. Stock ModemManager
+# refuses `mmcli --command` outside debug mode, so there is no other way to read these.
+# The interface number is captured the way ModemManager's rules do it. Takes effect
+# for a modem probed after installation (replug, or re-probe of that modem only).
+SUBSYSTEM=="tty", KERNEL=="ttyUSB[0-9]*", SUBSYSTEMS=="usb", ATTRS{bInterfaceNumber}=="?*", \
+  ENV{.CERALIVE_USBIFNUM}="$attr{bInterfaceNumber}"
+SUBSYSTEM=="tty", ENV{.CERALIVE_USBIFNUM}=="03", \
+  ATTRS{idVendor}=="2c7c", ATTRS{idProduct}=="0801", \
+  ENV{ID_MM_PORT_IGNORE}="1"
 
 LABEL="ceralive_modem_end"
