@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { chmod, mkdtemp, rm, stat } from 'node:fs/promises';
+import { chmod, mkdtemp, open, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { StackContext } from '../context';
@@ -26,22 +26,28 @@ test('certification output is owner-only on creation and replacement', async () 
 	}
 });
 
-for (const kind of ['fifo', 'device']) {
-	test(`certification refuses a ${kind} promptly`, async () => {
+for (const kind of ['unopened FIFO', 'connected FIFO']) {
+	test(`certification refuses ${kind} promptly`, async () => {
 		const dir = await mkdtemp(join(tmpdir(), 'certify-special-'));
 		try {
-			const path = kind === 'fifo' ? join(dir, 'fifo') : '/dev/null';
-			if (kind === 'fifo') expect(spawnSync('mkfifo', [path]).status).toBe(0);
-			const source = `import { certifyDepsFromContext } from ${JSON.stringify(join(import.meta.dir, 'certify.ts'))};
+			const path = join(dir, 'fifo');
+			expect(spawnSync('mkfifo', [path]).status).toBe(0);
+			// A connected reader lets the writer reach the regular-file guard.
+			const peer = kind === 'connected FIFO' ? await open(path, 'r+') : undefined;
+			try {
+				const source = `import { certifyDepsFromContext } from ${JSON.stringify(join(import.meta.dir, 'certify.ts'))};
     const deps = certifyDepsFromContext({ now: Date.now }, {slot:'test', synthetic:true});
     try { await deps.writeBundle(${JSON.stringify(path)}, '{}'); process.exit(2); }
     catch (error) { if (error.code !== 'ENXIO' && !error.message.includes('regular file')) throw error; }`;
-			const result = spawnSync(process.execPath, ['--eval', source], {
-				timeout: 3000,
-				encoding: 'utf8',
-			});
-			expect(result.error).toBeUndefined();
-			expect(result.status).toBe(0);
+				const result = spawnSync(process.execPath, ['--eval', source], {
+					timeout: 3000,
+					encoding: 'utf8',
+				});
+				expect(result.error).toBeUndefined();
+				expect(result.status).toBe(0);
+			} finally {
+				await peer?.close();
+			}
 		} finally {
 			await rm(dir, { recursive: true, force: true });
 		}

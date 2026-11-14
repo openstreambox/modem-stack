@@ -159,6 +159,9 @@ export function createFccUnlockPolicyFileStore(
 
 	async function writeAtomic(state: PersistedFccUnlockPolicy): Promise<void> {
 		await mkdir(dirname(path), { recursive: true });
+		// The trailing newline is for the shell reconciler's benefit, not decoration:
+		// it reads the file with `tr -d`, and a newline-terminated document is what a
+		// human `cat`ing it on a board expects to see.
 		await replacePrivateFile(path, `${JSON.stringify(state)}\n`);
 	}
 
