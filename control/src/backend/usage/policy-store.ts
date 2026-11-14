@@ -19,7 +19,7 @@
 //
 // The two hard guarantees are the SAME ones `store.ts` makes, and deliberately
 // implemented the same way so the pair can be read side by side:
-//   - MODE 0600 via temp → chmod → atomic rename, regardless of umask.
+//   - MODE 0600 via exclusive temp → descriptor chmod → write → atomic rename, regardless of umask.
 //   - FAIL-SOFT ON CORRUPTION: an unparseable/incompatible file logs METADATA
 //     ONLY (byte length + a classification reason, never the content) and is
 //     replaced by a fresh empty 0600 file rather than throwing.
@@ -28,9 +28,10 @@
 // there is no subscriber or device identity here (no ICCID/IMSI/IMEI, no
 // operator, no model) — the same no-PII property the counter store holds.
 
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { DesiredUsage } from '../../domain';
+import { replacePrivateFile } from '../../private-file';
 
 /** The current on-disk schema version. Bump when the persisted shape changes. */
 export const USAGE_POLICY_SCHEMA_VERSION = 1;
@@ -65,7 +66,7 @@ export type UsagePolicyLogger = (event: UsagePolicyLogEvent) => void;
 export interface UsagePolicyStore {
 	/** Load persisted policy; recreate a fresh 0600 file if absent or corrupt. */
 	load(nowMs: number): Promise<PersistedUsagePolicy>;
-	/** Atomically write policy with mode 0600 (temp → chmod → rename). */
+	/** Atomically write policy with mode 0600 (exclusive temp → descriptor chmod → write → rename). */
 	save(state: PersistedUsagePolicy): Promise<void>;
 }
 
@@ -182,11 +183,7 @@ export function createUsagePolicyFileStore(options: UsagePolicyFileStoreOptions)
 
 	async function writeAtomic(state: PersistedUsagePolicy): Promise<void> {
 		await mkdir(dirname(path), { recursive: true });
-		const tmp = `${path}.tmp`;
-		await writeFile(tmp, JSON.stringify(state));
-		// chmod AFTER the write (not an open flag) so mode is 0600 regardless of umask.
-		await chmod(tmp, 0o600);
-		await rename(tmp, path);
+		await replacePrivateFile(path, JSON.stringify(state));
 	}
 
 	return {

@@ -23,7 +23,7 @@ forbidden outright by the shadow-mode mutation-freedom contract; nothing here go
 near it.
 
 - **`createUsagePolicyFileStore`** mirrors `createUsageFileStore` exactly — versioned
-  document, temp → chmod → atomic rename so the file is **mode 0600** regardless of
+  document, exclusive temp → descriptor chmod → write → atomic rename so the file is **mode 0600** regardless of
   umask, and **fail-soft on corruption**: an unparseable file logs METADATA ONLY
   (byte count + a named field, never the content) and is replaced by a fresh empty
   one. A row carries only an opaque slot id and two numbers, so the no-PII property

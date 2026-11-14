@@ -94,3 +94,9 @@ Coverage: `journal/journal-replay.test.ts` (write N, drop the engine with no shu
 reconstruct from disk, assert the pending/unknown enumeration), `journal-corruption.test.ts`
 (trailing, mid-file, torn, wrong-version and missing-field damage), `legacy-ceraui.test.ts`,
 and `journal-path-injection.test.ts`. Fixtures: `control/test-support/journal-fixture.ts`.
+
+Private persistence opens a descriptor with an explicit creation mode, restricts it
+with descriptor chmod before writing, and closes it on every outcome. The journal
+keeps append-only semantics; policy stores use exclusive random sibling files and
+atomic rename. Ownership metadata is updated in place so flock retains its inode.
+Certification output applies the same permission ordering before writing.

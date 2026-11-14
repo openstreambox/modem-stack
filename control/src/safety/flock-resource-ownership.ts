@@ -1,11 +1,13 @@
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
-import { readFile, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import type {
 	ResourceOwnershipHolder,
 	ResourceOwnershipLease,
 	ResourceOwnershipPort,
 	ResourceOwnershipResult,
 } from '../ports';
+import { openPrivateFile } from '../private-file';
 
 export type FlockResourceOwnershipOptions = {
 	readonly lockPath: string;
@@ -162,10 +164,15 @@ function childStarted(
 			const acquired = parseAcquiredLine(stdout.slice(0, newline));
 			if (acquired === undefined || acknowledged) return;
 			acknowledged = true;
-			void writeFile(lockPath, `${JSON.stringify(holder)}\n`, { mode: 0o600 }).then(
-				() => finish({ status: 'acquired', holder }),
-				fail,
-			);
+			void (async () => {
+				const file = await openPrivateFile(lockPath, constants.O_WRONLY | constants.O_CREAT);
+				try {
+					await file.truncate(0);
+					await file.writeFile(`${JSON.stringify(holder)}\n`);
+				} finally {
+					await file.close();
+				}
+			})().then(() => finish({ status: 'acquired', holder }), fail);
 		};
 		const onClose = (code: number | null): void =>
 			finish({ status: 'closed', code, stderr: stderr.trim() });

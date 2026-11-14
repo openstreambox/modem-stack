@@ -2,7 +2,7 @@
 // corruption recovery with METADATA-ONLY logging, and the per-slot selector.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { lstat, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -161,4 +161,15 @@ describe('validators', () => {
 	])('isValidThresholdBytes(%p) === %p', (value, expected) => {
 		expect(isValidThresholdBytes(value)).toBe(expected);
 	});
+});
+
+test('saving does not follow a stale temporary symlink', async () => {
+	const other = join(dir, 'unrelated');
+	await writeFile(other, 'untouched');
+	await symlink(other, `${path}.tmp`);
+	const store = createUsagePolicyFileStore({ path });
+	await store.save(sample);
+	expect(await readFile(other, 'utf8')).toBe('untouched');
+	await expect(lstat(`${path}.tmp`)).rejects.toMatchObject({ code: 'ENOENT' });
+	expect((await stat(path)).mode & 0o777).toBe(0o600);
 });

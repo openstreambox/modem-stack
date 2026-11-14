@@ -10,7 +10,7 @@
 //
 // The two hard guarantees are the SAME ones `backend/usage/policy-store.ts` makes,
 // and deliberately implemented the same way so the pair can be read side by side:
-//   - MODE 0600 via temp → chmod → atomic rename, regardless of umask.
+//   - MODE 0600 via exclusive temp → descriptor chmod → write → atomic rename, regardless of umask.
 //   - FAIL-SAFE ON CORRUPTION: an unparseable/incompatible file logs METADATA ONLY
 //     (byte length + a classification reason, never the content) and is treated as
 //     EMPTY. Note the divergence from the usage store, and it is load-bearing: the
@@ -25,8 +25,9 @@
 // because ModemManager's mechanism is model-wide and a per-unit key would be a
 // promise the dispatcher cannot keep.
 
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { replacePrivateFile } from '../private-file';
 
 import { isFccUnlockKey } from './coverage';
 
@@ -63,7 +64,7 @@ export type FccUnlockLogger = (event: FccUnlockLogEvent) => void;
 export interface FccUnlockPolicyStore {
 	/** Load persisted policy; an absent or unreadable file loads as EMPTY. */
 	load(nowMs: number): Promise<PersistedFccUnlockPolicy>;
-	/** Atomically write policy with mode 0600 (temp → chmod → rename). */
+	/** Atomically write policy with mode 0600 (exclusive temp → descriptor chmod → write → rename). */
 	save(state: PersistedFccUnlockPolicy): Promise<void>;
 }
 
@@ -158,14 +159,10 @@ export function createFccUnlockPolicyFileStore(
 
 	async function writeAtomic(state: PersistedFccUnlockPolicy): Promise<void> {
 		await mkdir(dirname(path), { recursive: true });
-		const tmp = `${path}.tmp`;
 		// The trailing newline is for the shell reconciler's benefit, not decoration:
 		// it reads the file with `tr -d`, and a newline-terminated document is what a
 		// human `cat`ing it on a board expects to see.
-		await writeFile(tmp, `${JSON.stringify(state)}\n`);
-		// chmod AFTER the write (not an open flag) so mode is 0600 regardless of umask.
-		await chmod(tmp, 0o600);
-		await rename(tmp, path);
+		await replacePrivateFile(path, `${JSON.stringify(state)}\n`);
 	}
 
 	return {

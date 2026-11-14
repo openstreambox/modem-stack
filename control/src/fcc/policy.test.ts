@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { lstat, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -145,4 +145,19 @@ describe('setFccUnlockPolicy', () => {
 		expect(enabledFccUnlockKeys(state)).toEqual(['1199:9079']);
 		expect(state.unlock['2c7c:0801']).toBe(false);
 	});
+});
+
+it('saving never follows an old temporary symlink', async () => {
+	const path = await scratch();
+	const other = `${path}.other`;
+	await writeFile(other, 'untouched');
+	await symlink(other, `${path}.tmp`);
+	await createFccUnlockPolicyFileStore({ path }).save({
+		schemaVersion: FCC_UNLOCK_SCHEMA_VERSION,
+		savedAtMs: 1,
+		unlock: {},
+	});
+	expect(await readFile(other, 'utf8')).toBe('untouched');
+	await expect(lstat(`${path}.tmp`)).rejects.toMatchObject({ code: 'ENOENT' });
+	expect((await stat(path)).mode & 0o777).toBe(0o600);
 });

@@ -2,7 +2,7 @@
 // with METADATA-ONLY logging, and the no-PII guarantee on the serialized bytes.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { lstat, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -60,7 +60,7 @@ describe('UsageStore — versioned round-trip', () => {
 	});
 });
 
-describe('UsageStore — mode 0600 via chmod-after-write', () => {
+describe('UsageStore — mode 0600 via descriptor permissions', () => {
 	test('the persisted file ends up owner-read/write only (real fs.stat)', async () => {
 		const store = createUsageFileStore({ path });
 		await store.save(sample);
@@ -145,4 +145,15 @@ describe('UsageStore — no PII in the persisted bytes', () => {
 			expect(typeof slot.cycleBytes).toBe('number');
 		}
 	});
+});
+
+test('saving does not follow a stale temporary symlink', async () => {
+	const other = join(dir, 'unrelated');
+	await writeFile(other, 'untouched');
+	await symlink(other, `${path}.tmp`);
+	const store = createUsageFileStore({ path });
+	await store.save(sample);
+	expect(await readFile(other, 'utf8')).toBe('untouched');
+	await expect(lstat(`${path}.tmp`)).rejects.toMatchObject({ code: 'ENOENT' });
+	expect((await stat(path)).mode & 0o777).toBe(0o600);
 });

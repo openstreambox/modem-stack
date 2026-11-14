@@ -6,15 +6,16 @@
 // and `no-pii.test.ts` proves the serialized bytes stay clean.
 //
 // Two hard guarantees:
-//   - MODE 0600: the file is written to a temp path, chmod'd to 0600 AFTER the
+//   - MODE 0600: the exclusive temporary descriptor is restricted to 0600 BEFORE the
 //     write, then atomically renamed over the target — so the on-disk file always
 //     ends up owner-read/write-only regardless of the process umask.
 //   - FAIL-SOFT ON CORRUPTION: an unparseable/incompatible file is never fatal. We
 //     log METADATA ONLY (byte length + a classification reason — never the raw,
 //     possibly-sensitive content), recreate a fresh empty 0600 file, and carry on.
 
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { replacePrivateFile } from '../../private-file';
 
 /** The current on-disk schema version. Bump when the persisted shape changes. */
 export const USAGE_SCHEMA_VERSION = 1;
@@ -51,7 +52,7 @@ export type UsageLogger = (event: UsageLogEvent) => void;
 export interface UsageStore {
 	/** Load persisted state; recreate a fresh 0600 file if absent or corrupt. */
 	load(currentBootId: string, nowMs: number): Promise<PersistedUsage>;
-	/** Atomically write state with mode 0600 (temp → chmod → rename). */
+	/** Atomically write state with mode 0600 (exclusive temp → descriptor chmod → write → rename). */
 	save(state: PersistedUsage): Promise<void>;
 }
 
@@ -143,11 +144,7 @@ export function createUsageFileStore(options: UsageFileStoreOptions): UsageStore
 
 	async function writeAtomic(state: PersistedUsage): Promise<void> {
 		await mkdir(dirname(path), { recursive: true });
-		const tmp = `${path}.tmp`;
-		await writeFile(tmp, JSON.stringify(state));
-		// chmod AFTER the write (not an open flag) so mode is 0600 regardless of umask.
-		await chmod(tmp, 0o600);
-		await rename(tmp, path);
+		await replacePrivateFile(path, JSON.stringify(state));
 	}
 
 	return {

@@ -10,6 +10,8 @@
 // goes into a catalog entry's `evidenceBundleSha256`. A failed or malformed capture exits
 // non-zero with a clear message — a broken bundle is never written.
 
+import { constants } from 'node:fs';
+import { open } from 'node:fs/promises';
 import {
 	type AtCommandSender,
 	type DecodedManagedObjects,
@@ -77,7 +79,22 @@ export function certifyDepsFromContext(ctx: StackContext, args: CertifyArgs): Ce
 		now: () => ctx.now(),
 		synthetic: false,
 		writeBundle: async (path, content) => {
-			await Bun.write(path, content);
+			const file = await open(
+				path,
+				constants.O_WRONLY |
+					constants.O_CREAT |
+					constants.O_TRUNC |
+					constants.O_NOFOLLOW |
+					constants.O_NONBLOCK,
+				0o600,
+			);
+			try {
+				if (!(await file.stat()).isFile()) throw new Error('Private target must be a regular file');
+				await file.chmod(0o600);
+				await file.writeFile(content);
+			} finally {
+				await file.close();
+			}
 		},
 	};
 }

@@ -28,8 +28,10 @@
 //     byte once and emits a leading terminator when the file does not end in one,
 //     so the damage stays confined to the record that actually tore.
 
-import { appendFile, chmod, mkdir, open, readFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { mkdir, open, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { openPrivateFile } from '../private-file';
 
 import { decodeJournalEntry, encodeJournalEntry, type JournalDecodeFailure } from './codec';
 import type { JournalEntry } from './entry';
@@ -166,10 +168,16 @@ class FileJournalStore implements JournalStore {
 		await mkdir(dirname(this.path), { recursive: true });
 		this.#terminated ??= await this.#probeTerminated();
 		const line = `${this.#terminated ? '' : '\n'}${encodeJournalEntry(entry)}\n`;
-		await appendFile(this.path, line, { mode: this.#mode });
-		// chmod AFTER the write, not as an open flag, so the mode holds regardless of
-		// umask — the same reason the usage and FCC policy stores do it this way.
-		await chmod(this.path, this.#mode);
+		const file = await openPrivateFile(
+			this.path,
+			constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND,
+			this.#mode,
+		);
+		try {
+			await file.writeFile(line);
+		} finally {
+			await file.close();
+		}
 		this.#terminated = true;
 	}
 
