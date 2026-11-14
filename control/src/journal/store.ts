@@ -1,3 +1,5 @@
+import { constants } from 'node:fs';
+import { openPrivateFile } from '../private-file';
 // The append-only journal store. THE PATH IS INJECTED AND HAS NO DEFAULT.
 //
 // This package never learns where a journal lives. The embedding process owns that
@@ -28,7 +30,7 @@
 //     byte once and emits a leading terminator when the file does not end in one,
 //     so the damage stays confined to the record that actually tore.
 
-import { appendFile, chmod, mkdir, open, readFile } from 'node:fs/promises';
+import { mkdir, open, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import { decodeJournalEntry, encodeJournalEntry, type JournalDecodeFailure } from './codec';
@@ -112,7 +114,11 @@ export function decodeJournalText(text: string): JournalReadResult {
 			continue;
 		}
 		damage.push({
-			location: { kind: 'line', line: index + 1, trailing: index === lastPopulated },
+			location: {
+				kind: 'line',
+				line: index + 1,
+				trailing: index === lastPopulated,
+			},
 			bytes: Buffer.byteLength(raw, 'utf8'),
 			failure: decoded.failure,
 		});
@@ -156,7 +162,13 @@ class FileJournalStore implements JournalStore {
 			}
 			return {
 				entries: [],
-				damage: [{ location: { kind: 'file' }, bytes: 0, failure: { code: 'unreadable' } }],
+				damage: [
+					{
+						location: { kind: 'file' },
+						bytes: 0,
+						failure: { code: 'unreadable' },
+					},
+				],
 			};
 		}
 		return decodeJournalText(text);
@@ -166,10 +178,16 @@ class FileJournalStore implements JournalStore {
 		await mkdir(dirname(this.path), { recursive: true });
 		this.#terminated ??= await this.#probeTerminated();
 		const line = `${this.#terminated ? '' : '\n'}${encodeJournalEntry(entry)}\n`;
-		await appendFile(this.path, line, { mode: this.#mode });
-		// chmod AFTER the write, not as an open flag, so the mode holds regardless of
-		// umask — the same reason the usage and FCC policy stores do it this way.
-		await chmod(this.path, this.#mode);
+		const file = await openPrivateFile(
+			this.path,
+			constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND,
+			this.#mode,
+		);
+		try {
+			await file.writeFile(line);
+		} finally {
+			await file.close();
+		}
 		this.#terminated = true;
 	}
 

@@ -1,3 +1,5 @@
+import { constants } from 'node:fs';
+import { open } from 'node:fs/promises';
 // `modem-control certify <slot>` — capture a redacted, schema-validated certification
 // bundle for one modem slot.
 //
@@ -77,7 +79,17 @@ export function certifyDepsFromContext(ctx: StackContext, args: CertifyArgs): Ce
 		now: () => ctx.now(),
 		synthetic: false,
 		writeBundle: async (path, content) => {
-			await Bun.write(path, content);
+			const file = await open(
+				path,
+				constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+				0o600,
+			);
+			try {
+				await file.chmod(0o600);
+				await file.writeFile(content);
+			} finally {
+				await file.close();
+			}
 		},
 	};
 }

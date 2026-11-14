@@ -1,13 +1,17 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createFlockResourceOwnershipPort } from './flock-resource-ownership';
 
 type RootMessage =
 	| { readonly type: 'acquired'; readonly holderPid: number }
-	| { readonly type: 'refused'; readonly reason: 'already-owned'; readonly holderPid?: number }
+	| {
+			readonly type: 'refused';
+			readonly reason: 'already-owned';
+			readonly holderPid?: number;
+	  }
 	| { readonly type: 'expired' }
 	| { readonly type: 'released' };
 
@@ -68,7 +72,9 @@ async function writeFlockHelper(
 ): Promise<{ readonly flockBinary: string; readonly pidPath: string }> {
 	const flockBinary = join(directory, name);
 	const pidPath = join(directory, `${name}.pid`);
-	await writeFile(flockBinary, `#!/bin/sh\necho $$ > ${pidPath}\n${body}\n`, { mode: 0o755 });
+	await writeFile(flockBinary, `#!/bin/sh\necho $$ > ${pidPath}\n${body}\n`, {
+		mode: 0o755,
+	});
 	await chmod(flockBinary, 0o755);
 	return { flockBinary, pidPath };
 }
@@ -221,4 +227,19 @@ describe('flock resource ownership across composition roots', () => {
 		expect((await failed).message).toContain('startup output limit');
 		await expectHelperReaped(pid);
 	});
+});
+
+test('holder metadata repairs an existing readable lock before publishing', async () => {
+	const path = await lockPath();
+	await writeFile(path, '', { mode: 0o644 });
+	await chmod(path, 0o644);
+	const result = await createFlockResourceOwnershipPort({
+		lockPath: path,
+	}).acquire({ resource: 'usb-hub' });
+	expect(result.status).toBe('acquired');
+	try {
+		expect((await stat(path)).mode & 0o777).toBe(0o600);
+	} finally {
+		if (result.status === 'acquired') await result.lease.release();
+	}
 });
