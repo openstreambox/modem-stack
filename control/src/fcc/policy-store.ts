@@ -1,4 +1,3 @@
-import { replacePrivateFile } from '../private-file';
 // Durable persistence for the operator's FCC-auto-unlock POLICY.
 //
 // WHY THE FILE IS THE RECORD AND THE SYMLINK IS NOT. ModemManager's opt-in
@@ -28,6 +27,7 @@ import { replacePrivateFile } from '../private-file';
 
 import { mkdir, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { replacePrivateFile } from '../private-file';
 
 import { isFccUnlockKey } from './coverage';
 
@@ -78,11 +78,7 @@ function defaultLogger(event: FccUnlockLogEvent): void {
 }
 
 function emptyState(nowMs: number): PersistedFccUnlockPolicy {
-	return {
-		schemaVersion: FCC_UNLOCK_SCHEMA_VERSION,
-		savedAtMs: nowMs,
-		unlock: {},
-	};
+	return { schemaVersion: FCC_UNLOCK_SCHEMA_VERSION, savedAtMs: nowMs, unlock: {} };
 }
 
 /** A schema violation naming only the offending FIELD (never file content). */

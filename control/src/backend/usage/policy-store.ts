@@ -1,4 +1,3 @@
-import { replacePrivateFile } from '../../private-file';
 // Durable persistence for the operator's data-usage POLICY (cycle day + advisory
 // threshold), the write-side counterpart of `store.ts`'s counter persistence.
 //
@@ -32,6 +31,7 @@ import { replacePrivateFile } from '../../private-file';
 import { mkdir, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { DesiredUsage } from '../../domain';
+import { replacePrivateFile } from '../../private-file';
 
 /** The current on-disk schema version. Bump when the persisted shape changes. */
 export const USAGE_POLICY_SCHEMA_VERSION = 1;
@@ -80,11 +80,7 @@ function defaultLogger(event: UsagePolicyLogEvent): void {
 }
 
 function freshState(nowMs: number): PersistedUsagePolicy {
-	return {
-		schemaVersion: USAGE_POLICY_SCHEMA_VERSION,
-		savedAtMs: nowMs,
-		slots: [],
-	};
+	return { schemaVersion: USAGE_POLICY_SCHEMA_VERSION, savedAtMs: nowMs, slots: [] };
 }
 
 /** A schema violation naming only the offending FIELD (never file content). */

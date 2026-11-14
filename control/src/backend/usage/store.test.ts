@@ -2,7 +2,7 @@
 // with METADATA-ONLY logging, and the no-PII guarantee on the serialized bytes.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -29,11 +29,7 @@ const sample: PersistedUsage = {
 	bootId: 'boot-uuid-1',
 	savedAtMs: 1_700_000_000_000,
 	slots: [
-		{
-			logicalSlotId: 'slot-a',
-			cycleBytes: 1234,
-			cycleStartMs: 1_699_000_000_000,
-		},
+		{ logicalSlotId: 'slot-a', cycleBytes: 1234, cycleStartMs: 1_699_000_000_000 },
 		{
 			logicalSlotId: 'slot-b',
 			cycleBytes: 42,
@@ -108,12 +104,7 @@ describe('UsageStore — fail-soft corruption recovery', () => {
 	test('an incompatible schema version is treated as corruption and recreated', async () => {
 		await writeFile(
 			path,
-			JSON.stringify({
-				schemaVersion: 999,
-				bootId: 'x',
-				savedAtMs: 0,
-				slots: [],
-			}),
+			JSON.stringify({ schemaVersion: 999, bootId: 'x', savedAtMs: 0, slots: [] }),
 		);
 		const events: UsageLogEvent[] = [];
 		const store = createUsageFileStore({ path, logger: (e) => events.push(e) });
@@ -163,5 +154,6 @@ test('saving does not follow a stale temporary symlink', async () => {
 	const store = createUsageFileStore({ path });
 	await store.save(sample);
 	expect(await readFile(other, 'utf8')).toBe('untouched');
+	await expect(lstat(`${path}.tmp`)).rejects.toMatchObject({ code: 'ENOENT' });
 	expect((await stat(path)).mode & 0o777).toBe(0o600);
 });

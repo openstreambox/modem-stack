@@ -1,5 +1,3 @@
-import { constants } from 'node:fs';
-import { openPrivateFile } from '../private-file';
 // The append-only journal store. THE PATH IS INJECTED AND HAS NO DEFAULT.
 //
 // This package never learns where a journal lives. The embedding process owns that
@@ -30,8 +28,10 @@ import { openPrivateFile } from '../private-file';
 //     byte once and emits a leading terminator when the file does not end in one,
 //     so the damage stays confined to the record that actually tore.
 
+import { constants } from 'node:fs';
 import { mkdir, open, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { openPrivateFile } from '../private-file';
 
 import { decodeJournalEntry, encodeJournalEntry, type JournalDecodeFailure } from './codec';
 import type { JournalEntry } from './entry';
@@ -114,11 +114,7 @@ export function decodeJournalText(text: string): JournalReadResult {
 			continue;
 		}
 		damage.push({
-			location: {
-				kind: 'line',
-				line: index + 1,
-				trailing: index === lastPopulated,
-			},
+			location: { kind: 'line', line: index + 1, trailing: index === lastPopulated },
 			bytes: Buffer.byteLength(raw, 'utf8'),
 			failure: decoded.failure,
 		});
@@ -162,13 +158,7 @@ class FileJournalStore implements JournalStore {
 			}
 			return {
 				entries: [],
-				damage: [
-					{
-						location: { kind: 'file' },
-						bytes: 0,
-						failure: { code: 'unreadable' },
-					},
-				],
+				damage: [{ location: { kind: 'file' }, bytes: 0, failure: { code: 'unreadable' } }],
 			};
 		}
 		return decodeJournalText(text);

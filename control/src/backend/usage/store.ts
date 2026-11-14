@@ -1,4 +1,3 @@
-import { replacePrivateFile } from '../../private-file';
 // Versioned, fail-soft persistence for the usage sampler.
 //
 // The persisted file is a small JSON document carrying ONLY opaque slot ids,
@@ -16,6 +15,7 @@ import { replacePrivateFile } from '../../private-file';
 
 import { mkdir, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { replacePrivateFile } from '../../private-file';
 
 /** The current on-disk schema version. Bump when the persisted shape changes. */
 export const USAGE_SCHEMA_VERSION = 1;
@@ -66,12 +66,7 @@ function defaultLogger(event: UsageLogEvent): void {
 }
 
 function freshState(bootId: string, nowMs: number): PersistedUsage {
-	return {
-		schemaVersion: USAGE_SCHEMA_VERSION,
-		bootId,
-		savedAtMs: nowMs,
-		slots: [],
-	};
+	return { schemaVersion: USAGE_SCHEMA_VERSION, bootId, savedAtMs: nowMs, slots: [] };
 }
 
 function isFiniteNumber(value: unknown): value is number {

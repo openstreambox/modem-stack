@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { readFile, stat } from 'node:fs/promises';
+import { chmod, readFile, stat } from 'node:fs/promises';
 
 import {
 	appliedResult,
@@ -41,6 +41,16 @@ describe('the journal path is injected and has no default', () => {
 		await engine.record(startedEvent('op-1'));
 		expect(engine.path).toBe(harness.path);
 		await expect(stat(harness.path)).resolves.toBeDefined();
+	});
+
+	test('append tightens an existing readable journal without losing entries', async () => {
+		const engine = harness.restart();
+		await engine.record(startedEvent('old'));
+		const before = await readFile(harness.path, 'utf8');
+		await chmod(harness.path, 0o644);
+		await engine.record(startedEvent('new'));
+		expect((await stat(harness.path)).mode & 0o777).toBe(0o600);
+		expect((await readFile(harness.path, 'utf8')).startsWith(before)).toBe(true);
 	});
 
 	test('the journal file is created 0600 regardless of umask', async () => {

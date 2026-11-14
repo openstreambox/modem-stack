@@ -4,7 +4,7 @@ import { open, rename, unlink } from 'node:fs/promises';
 
 /** Open an owner-only regular file without following a symlink. */
 export async function openPrivateFile(path: string, flags: number, mode = 0o600) {
-	const file = await open(path, flags | constants.O_NOFOLLOW, mode);
+	const file = await open(path, flags | constants.O_NOFOLLOW | constants.O_NONBLOCK, mode);
 	try {
 		if (!(await file.stat()).isFile()) throw new Error('Private target must be a regular file');
 		await file.chmod(mode);
@@ -17,6 +17,9 @@ export async function openPrivateFile(path: string, flags: number, mode = 0o600)
 
 /** Replace using an exclusive sibling; never write through an old temporary name. */
 export async function replacePrivateFile(path: string, contents: string): Promise<void> {
+	await unlink(`${path}.tmp`).catch((error: NodeJS.ErrnoException) => {
+		if (error.code !== 'ENOENT') throw error;
+	});
 	const temp = `${path}.${randomUUID()}.tmp`;
 	const file = await openPrivateFile(
 		temp,

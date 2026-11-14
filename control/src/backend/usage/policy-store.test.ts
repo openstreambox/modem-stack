@@ -2,7 +2,7 @@
 // corruption recovery with METADATA-ONLY logging, and the per-slot selector.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -66,10 +66,7 @@ describe('UsagePolicyStore — fail-soft corruption', () => {
 	test('invalid JSON is replaced by a fresh 0600 file and logged as METADATA ONLY', async () => {
 		const events: UsagePolicyLogEvent[] = [];
 		await writeFile(path, '{"schemaVersion":1,"slots":');
-		const store = createUsagePolicyFileStore({
-			path,
-			logger: (e) => events.push(e),
-		});
+		const store = createUsagePolicyFileStore({ path, logger: (e) => events.push(e) });
 
 		const loaded = await store.load(7);
 
@@ -95,43 +92,28 @@ describe('UsagePolicyStore — fail-soft corruption', () => {
 		],
 		[
 			'cycleDay',
-			JSON.stringify({
-				...sample,
-				slots: [{ logicalSlotId: 'a', cycleDay: 32 }],
-			}),
+			JSON.stringify({ ...sample, slots: [{ logicalSlotId: 'a', cycleDay: 32 }] }),
 			'schema-mismatch: cycleDay',
 		],
 		[
 			'thresholdBytes',
-			JSON.stringify({
-				...sample,
-				slots: [{ logicalSlotId: 'a', thresholdBytes: -1 }],
-			}),
+			JSON.stringify({ ...sample, slots: [{ logicalSlotId: 'a', thresholdBytes: -1 }] }),
 			'schema-mismatch: thresholdBytes',
 		],
 	])('a bad %s is rejected by name and never throws', async (_field, text, reason) => {
 		const events: UsagePolicyLogEvent[] = [];
 		await writeFile(path, text);
-		const store = createUsagePolicyFileStore({
-			path,
-			logger: (e) => events.push(e),
-		});
+		const store = createUsagePolicyFileStore({ path, logger: (e) => events.push(e) });
 
 		expect((await store.load(9)).slots).toEqual([]);
 		expect(events[0]?.reason).toBe(reason);
 	});
 
 	test('the corruption log carries a byte count and NEVER the file content', async () => {
-		const secretish = JSON.stringify({
-			schemaVersion: 1,
-			slots: 'iccid-8991101200003204514',
-		});
+		const secretish = JSON.stringify({ schemaVersion: 1, slots: 'iccid-8991101200003204514' });
 		const events: UsagePolicyLogEvent[] = [];
 		await writeFile(path, secretish);
-		const store = createUsagePolicyFileStore({
-			path,
-			logger: (e) => events.push(e),
-		});
+		const store = createUsagePolicyFileStore({ path, logger: (e) => events.push(e) });
 
 		await store.load(11);
 
@@ -188,5 +170,6 @@ test('saving does not follow a stale temporary symlink', async () => {
 	const store = createUsagePolicyFileStore({ path });
 	await store.save(sample);
 	expect(await readFile(other, 'utf8')).toBe('untouched');
+	await expect(lstat(`${path}.tmp`)).rejects.toMatchObject({ code: 'ENOENT' });
 	expect((await stat(path)).mode & 0o777).toBe(0o600);
 });

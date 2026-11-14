@@ -99,4 +99,4 @@ Private persistence opens a descriptor with an explicit creation mode, restricts
 with descriptor chmod before writing, and closes it on every outcome. The journal
 keeps append-only semantics; policy stores use exclusive random sibling files and
 atomic rename. Ownership metadata is updated in place so flock retains its inode.
-Certification output applies the same permission ordering before truncation.
+Certification output applies the same permission ordering before writing.

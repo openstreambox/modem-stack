@@ -7,11 +7,7 @@ import { createFlockResourceOwnershipPort } from './flock-resource-ownership';
 
 type RootMessage =
 	| { readonly type: 'acquired'; readonly holderPid: number }
-	| {
-			readonly type: 'refused';
-			readonly reason: 'already-owned';
-			readonly holderPid?: number;
-	  }
+	| { readonly type: 'refused'; readonly reason: 'already-owned'; readonly holderPid?: number }
 	| { readonly type: 'expired' }
 	| { readonly type: 'released' };
 
@@ -72,9 +68,7 @@ async function writeFlockHelper(
 ): Promise<{ readonly flockBinary: string; readonly pidPath: string }> {
 	const flockBinary = join(directory, name);
 	const pidPath = join(directory, `${name}.pid`);
-	await writeFile(flockBinary, `#!/bin/sh\necho $$ > ${pidPath}\n${body}\n`, {
-		mode: 0o755,
-	});
+	await writeFile(flockBinary, `#!/bin/sh\necho $$ > ${pidPath}\n${body}\n`, { mode: 0o755 });
 	await chmod(flockBinary, 0o755);
 	return { flockBinary, pidPath };
 }

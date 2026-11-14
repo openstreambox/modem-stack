@@ -24,11 +24,7 @@ export class FlockResourceOwnershipError extends Error {
 
 type ChildStart =
 	| { readonly status: 'acquired'; readonly holder: ResourceOwnershipHolder }
-	| {
-			readonly status: 'closed';
-			readonly code: number | null;
-			readonly stderr: string;
-	  };
+	| { readonly status: 'closed'; readonly code: number | null; readonly stderr: string };
 
 const STARTUP_DEADLINE_MS = 1_000;
 const STARTUP_OUTPUT_LIMIT_BYTES = 64 * 1024;
