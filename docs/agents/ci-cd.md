@@ -109,3 +109,7 @@ major action versions, per-manager caches, weekly grouped Dependabot, test-befor
 Action pins track the latest stable **major** (resolved via the `gh api` releases/latest
 endpoint); Dependabot keeps them current. JS/TS CI runs on **Node 26** — the CeraLive CI
 baseline, and the runtime the published tarball's consumer fixture asserts on.
+
+When repository issues are disabled, the watch still compares every pin. It skips
+issue reconciliation for current pins, but fails visibly if pins are behind.
+API failures remain errors; issue availability never suppresses a failed check.
