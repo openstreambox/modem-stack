@@ -50,6 +50,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Test issue-reporting contract offline
+        run: python3 packaging/ci/test-upstream-watch-reporting.py
+
       # `runner.temp` is unavailable in a job-level `env:` block, so the body path is declared
       # per step. It stays out of the checkout so the workspace is never dirtied.
       - name: Enumerate upstream + salsa tags and compare against the pins
@@ -69,8 +72,29 @@ jobs:
                 exit "$rc" ;;
           esac
 
+      - name: Check whether issue reporting is available
+        id: reporting
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BEHIND: ${{ steps.check.outputs.behind }}
+        run: |
+          set -euo pipefail
+          enabled="$(gh api "repos/$GH_REPO" --jq .has_issues)"
+          case "$enabled" in
+            true) echo "enabled=true" >> "$GITHUB_OUTPUT" ;;
+            false)
+              echo "enabled=false" >> "$GITHUB_OUTPUT"
+              echo "Issue reporting is disabled for this repository." >> "$GITHUB_STEP_SUMMARY"
+              if [ "$BEHIND" = true ]; then
+                echo "::error::Pins are behind; enable issues to receive the tracking report."
+                exit 1
+              fi ;;
+            *) echo "::error::Unexpected has_issues response"; exit 1 ;;
+          esac
+
       - name: Open or update the single tracking issue
-        if: steps.check.outputs.behind == 'true'
+        if: steps.reporting.outputs.enabled == 'true' && steps.check.outputs.behind == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -94,7 +118,7 @@ jobs:
           fi
 
       - name: Close the tracking issue once every pin is current again
-        if: steps.check.outputs.behind == 'false'
+        if: steps.reporting.outputs.enabled == 'true' && steps.check.outputs.behind == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
