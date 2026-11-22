@@ -29,8 +29,8 @@ const KEYS = [
 const variantValue = fc.oneof(
 	fc.string({ maxLength: 12 }),
 	fc.integer(),
-	// Non-finite readings are covered next to the fix that handles them.
-	fc.double({ noNaN: true, noDefaultInfinity: true }),
+	fc.double(),
+	fc.constantFrom(Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY),
 	fc.boolean(),
 	fc.array(fc.integer(), { maxLength: 3 }),
 );
@@ -56,7 +56,7 @@ describe('cell-info normalization', () => {
 					expect(typeof reading.serving).toBe('boolean');
 					for (const key of ['pci', 'rsrp', 'rsrq', 'sinr'] as const) {
 						const value = reading[key];
-						if (value !== undefined) expect(typeof value).toBe('number');
+						if (value !== undefined) expect(Number.isFinite(value)).toBe(true);
 					}
 				}
 			}),

@@ -70,6 +70,16 @@ function readServing(cell: DecodedProps): boolean {
 	return cellType?.toLowerCase().includes('serving') ?? false;
 }
 
+/**
+ * A numeric property, but only a real measurement. A D-Bus `d` can carry NaN or an
+ * infinity, and either one makes the serving-cell comparison below return NaN, which
+ * breaks its total order; a reading that is not a number is the same as no reading.
+ */
+function measurementProp(cell: DecodedProps, key: string): number | undefined {
+	const value = numberProp(cell, key);
+	return value !== undefined && Number.isFinite(value) ? value : undefined;
+}
+
 /** Normalize ONE cell's `a{sv}` dict into a `CellReading`, pinning the known keys. */
 export function normalizeCellReading(
 	cell: DecodedProps,
@@ -77,11 +87,11 @@ export function normalizeCellReading(
 ): CellReading {
 	const cellId = stringProp(cell, 'ci') ?? stringProp(cell, 'cell-id');
 	const tac = stringProp(cell, 'tac');
-	const pci = numberProp(cell, 'physical-ci');
-	const rsrp = numberProp(cell, 'rsrp');
-	const rsrq = numberProp(cell, 'rsrq');
+	const pci = measurementProp(cell, 'physical-ci');
+	const rsrp = measurementProp(cell, 'rsrp');
+	const rsrq = measurementProp(cell, 'rsrq');
 	// `sinr` ONLY — a dict carrying `snr` must never populate this field.
-	const sinr = numberProp(cell, 'sinr');
+	const sinr = measurementProp(cell, 'sinr');
 	// `band` ONLY when directly supplied; never inferred.
 	const band = stringProp(cell, 'band');
 	return {
