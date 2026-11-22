@@ -102,6 +102,22 @@ describe('decode3gppLacCi — MM 1.24.2 emits exactly five comma-separated token
 		expect(decode3gppLacCi('732,101,2B1C,,4E5F')).toBeUndefined();
 	});
 
+	test('tokens that are not what MM prints in that position are not a decode', () => {
+		for (const value of [
+			'abc,101,2B1C,0A1B2C3D,4E5F',
+			'73,101,2B1C,0A1B2C3D,4E5F',
+			'7320,101,2B1C,0A1B2C3D,4E5F',
+			'732,1,2B1C,0A1B2C3D,4E5F',
+			'732,1011,2B1C,0A1B2C3D,4E5F',
+			'732,101,zz,0A1B2C3D,4E5F',
+			'732,101,2B1C,not-hex,4E5F',
+			'732,101,2B1C,0A1B2C3D,4G5F',
+			'732,101,2B1C,0A1B2C3D0A1B2C3D0,4E5F',
+		]) {
+			expect(decode3gppLacCi(value)).toBeUndefined();
+		}
+	});
+
 	test('an EMPTY tracking-area code still decodes — a 2G/3G attach has none', () => {
 		expect(decode3gppLacCi('732,101,2B1C,0A1B2C3D,')?.trackingAreaCode).toBe('');
 	});

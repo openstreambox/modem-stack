@@ -106,10 +106,36 @@ describe('numeric decoders are total', () => {
 	});
 });
 
+// Mostly five-token strings, since anything else is rejected before the tokens matter.
+const lacCiText = fc.oneof(
+	text,
+	fc
+		.array(fc.oneof(fc.stringMatching(/^[0-9A-Fa-f]{0,4}$/), fc.string({ maxLength: 4 })), {
+			minLength: 5,
+			maxLength: 5,
+		})
+		.map((tokens) => tokens.join(',')),
+);
+
 describe('3GPP location context', () => {
+	test('an accepted value has the shape MM prints', () => {
+		fc.assert(
+			fc.property(lacCiText, (input) => {
+				const decoded = decode3gppLacCi(input);
+				if (decoded === undefined) return;
+				expect(decoded.mcc).toMatch(/^\d{3}$/);
+				expect(decoded.mnc).toMatch(/^\d{2,3}$/);
+				expect(decoded.cellId).toMatch(/^[0-9A-Fa-f]{1,16}$/);
+				expect(decoded.locationAreaCode).toMatch(/^[0-9A-Fa-f]{0,16}$/);
+				expect(decoded.trackingAreaCode).toMatch(/^[0-9A-Fa-f]{0,16}$/);
+			}),
+			budget(),
+		);
+	});
+
 	test('an accepted value reproduces its source tokens', () => {
 		fc.assert(
-			fc.property(text, (input) => {
+			fc.property(lacCiText, (input) => {
 				const decoded = decode3gppLacCi(input);
 				if (decoded === undefined) return;
 				expect(decoded.mcc).not.toBe('');
