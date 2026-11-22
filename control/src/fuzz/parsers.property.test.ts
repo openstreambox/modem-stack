@@ -196,6 +196,26 @@ describe('router signal models carry only finite readings', () => {
 	});
 });
 
+describe('JSON records', () => {
+	test('every field of a JSON object survives as a field', () => {
+		const names = fc.oneof(
+			fc.constantFrom('__proto__', 'constructor', 'toString', 'hasOwnProperty'),
+			fc.string({ maxLength: 8 }),
+		);
+		fc.assert(
+			fc.property(
+				fc.array(fc.tuple(names, fc.jsonValue({ maxDepth: 2 })), { maxLength: 6 }),
+				(entries) => {
+					const body = `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${JSON.stringify(v)}`).join(',')}}`;
+					const expected = Object.keys(JSON.parse(body));
+					expect(Object.keys(parseJsonRecord(body) ?? {})).toEqual(expected);
+				},
+			),
+			budget(),
+		);
+	});
+});
+
 describe('ModemManager observation normalization', () => {
 	const rawValue: fc.Arbitrary<RawFieldValue> = fc.letrec<{ v: RawFieldValue }>((tie) => ({
 		v: fc.oneof(
