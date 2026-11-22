@@ -351,4 +351,17 @@ describe('JSON record bodies', () => {
 		expect(Object.keys(record ?? {})).toEqual(['__proto__', 'signalbar']);
 		expect(Object.getPrototypeOf(record)).toBe(Object.prototype);
 	});
+
+	test('UFI keeps a params field named __proto__ as a field', () => {
+		const envelope = normalizeUfiObservation(
+			{
+				...UFI_FIXTURE,
+				sysinfo: '{"reply":"ok","__proto__":[1],"params":{"__proto__":[2],"cellid":"3344"}}',
+			},
+			CONTEXT,
+		);
+		const { raw } = observation(envelope).diagnostics;
+		expect(raw['sysinfo.__proto__']).toBeDefined();
+		expect(raw['sysinfo.cellid']).toBe('3344');
+	});
 });
