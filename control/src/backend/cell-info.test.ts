@@ -179,3 +179,28 @@ describe('selectServingCell — permutation invariance (MANDATORY)', () => {
 		}
 	});
 });
+
+describe('non-finite measurements are no measurement', () => {
+	const NON_FINITE = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+
+	test('NaN and infinities never reach a reading', () => {
+		for (const bad of NON_FINITE) {
+			const reading = read({ 'physical-ci': bad, rsrp: bad, rsrq: bad, sinr: bad });
+			expect(reading.pci).toBeUndefined();
+			expect(reading.rsrp).toBeUndefined();
+			expect(reading.rsrq).toBeUndefined();
+			expect(reading.sinr).toBeUndefined();
+		}
+	});
+
+	test('the serving cell does not depend on input order when one rsrp is NaN', () => {
+		const cells = [
+			read({ ci: 'a', rsrp: Number.NaN }),
+			read({ ci: 'b', rsrp: -90 }),
+			read({ ci: 'c', rsrp: -80 }),
+		];
+		for (const order of permutations(cells)) {
+			expect(selectServingCell(order)?.cellId).toBe('c');
+		}
+	});
+});
