@@ -37,9 +37,25 @@ export function assertSupportedSignature(signature: string): void {
 	}
 }
 
+// The D-Bus limits: a signature is at most 255 bytes, with at most 32 nested arrays,
+// 32 nested structs and 32 nested dict entries (libdbus counts each separately).
+const MAX_SIGNATURE_LENGTH = 255;
+const MAX_ARRAY_DEPTH = 32;
+const MAX_STRUCT_DEPTH = 32;
+const MAX_DICT_DEPTH = 32;
+
+// Types a dict entry key may have: the basic types (no `v`, no containers).
+const BASIC_TYPES = new Set('ybnqiuxtdsogh'.split(''));
+
 // Parse a full signature (which may contain several top-level complete types) into a
-// flat list of nodes.
+// flat list of nodes. Rejects what the wire format does not allow: stray or mismatched
+// closers, empty structs, dict entries that are not exactly `{key value}` directly inside
+// an array, the binding-only `r` and `e`, and nesting or length past the specification's
+// limits (which also keeps the recursion bounded).
 export function parseSignature(signature: string): SignatureNode[] {
+	if (signature.length > MAX_SIGNATURE_LENGTH) {
+		throw new Error(`Bad signature: longer than ${MAX_SIGNATURE_LENGTH} bytes`);
+	}
 	let index = 0;
 
 	function next(): string | null {
@@ -51,7 +67,13 @@ export function parseSignature(signature: string): SignatureNode[] {
 		return null;
 	}
 
-	function parseOne(char: string): SignatureNode {
+	function parseOne(
+		char: string,
+		arrayDepth: number,
+		structDepth: number,
+		dictDepth: number,
+		inArray: boolean,
+	): SignatureNode {
 		if (!KNOWN_TYPES.has(char)) {
 			throw new Error(`Unknown D-Bus type "${char}" in signature "${signature}"`);
 		}
@@ -59,26 +81,62 @@ export function parseSignature(signature: string): SignatureNode[] {
 		const children: SignatureNode[] = [];
 		switch (char) {
 			case 'a': {
+				if (arrayDepth >= MAX_ARRAY_DEPTH) {
+					throw new Error(
+						`Bad signature "${signature}": arrays nested deeper than ${MAX_ARRAY_DEPTH}`,
+					);
+				}
 				const element = next();
 				if (element === null) {
 					throw new Error(`Bad signature "${signature}": array with no element type`);
 				}
-				children.push(parseOne(element));
+				children.push(parseOne(element, arrayDepth + 1, structDepth, dictDepth, true));
 				return { type: 'a', child: children };
 			}
 			case '{':
 			case '(': {
+				if (char === '{' && !inArray) {
+					throw new Error(`Bad signature "${signature}": dict entry outside an array`);
+				}
+				// Structs and dict entries have separate depth limits, as in libdbus.
+				if (char === '(' ? structDepth >= MAX_STRUCT_DEPTH : dictDepth >= MAX_DICT_DEPTH) {
+					throw new Error(
+						`Bad signature "${signature}": nested deeper than ${char === '(' ? MAX_STRUCT_DEPTH : MAX_DICT_DEPTH}`,
+					);
+				}
 				const close = CONTAINER_CLOSE[char];
 				let element = next();
 				while (element !== null && element !== close) {
-					children.push(parseOne(element));
+					children.push(
+						parseOne(
+							element,
+							arrayDepth,
+							char === '(' ? structDepth + 1 : structDepth,
+							char === '{' ? dictDepth + 1 : dictDepth,
+							false,
+						),
+					);
 					element = next();
 				}
 				if (element === null) {
 					throw new Error(`Bad signature "${signature}": unterminated "${char}"`);
 				}
+				if (char === '(' && children.length === 0) {
+					throw new Error(`Bad signature "${signature}": empty struct`);
+				}
+				if (char === '{') {
+					const key = children[0];
+					if (children.length !== 2 || key === undefined || !BASIC_TYPES.has(key.type)) {
+						throw new Error(`Bad signature "${signature}": dict entry must be {basic-key value}`);
+					}
+				}
 				return { type: char, child: children };
 			}
+			case ')':
+			case '}':
+			case 'r':
+			case 'e':
+				throw new Error(`Bad signature "${signature}": unexpected "${char}"`);
 			default:
 				return { type: char, child: children };
 		}
@@ -87,7 +145,7 @@ export function parseSignature(signature: string): SignatureNode[] {
 	const nodes: SignatureNode[] = [];
 	let char = next();
 	while (char !== null) {
-		nodes.push(parseOne(char));
+		nodes.push(parseOne(char, 0, 0, 0, false));
 		char = next();
 	}
 	return nodes;
