@@ -28,6 +28,13 @@ describe('parseSignature accepts the signatures ModemManager uses', () => {
 	});
 });
 
+describe('dict entries are not counted as structs', () => {
+	test('32 nested structs plus a dict entry inside them is accepted', () => {
+		const signature = `${'('.repeat(32)}a{sv}${')'.repeat(32)}`;
+		expect(roundTrip(signature)).toBe(signature);
+	});
+});
+
 describe('parseSignature rejects what the wire format does not allow', () => {
 	test.each([
 		['a stray struct closer', ')'],
@@ -44,6 +51,7 @@ describe('parseSignature rejects what the wire format does not allow', () => {
 		['an unterminated struct', '(ss'],
 		['arrays nested past 32', `${'a'.repeat(33)}y`],
 		['structs nested past 32', `${'('.repeat(33)}y${')'.repeat(33)}`],
+		['dict entries nested past 32', `${'a{s'.repeat(33)}y${'}'.repeat(33)}`],
 		['a signature past 255 bytes', 'y'.repeat(256)],
 	])('%s', (_name, signature) => {
 		expect(() => parseSignature(signature)).toThrow(Error);

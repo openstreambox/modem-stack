@@ -37,11 +37,12 @@ export function assertSupportedSignature(signature: string): void {
 	}
 }
 
-// The D-Bus specification's limits: a signature is at most 255 bytes, with at most 32
-// nested arrays and 32 nested structs (64 containers in all).
+// The D-Bus limits: a signature is at most 255 bytes, with at most 32 nested arrays,
+// 32 nested structs and 32 nested dict entries (libdbus counts each separately).
 const MAX_SIGNATURE_LENGTH = 255;
 const MAX_ARRAY_DEPTH = 32;
 const MAX_STRUCT_DEPTH = 32;
+const MAX_DICT_DEPTH = 32;
 
 // Types a dict entry key may have: the basic types (no `v`, no containers).
 const BASIC_TYPES = new Set('ybnqiuxtdsogh'.split(''));
@@ -70,6 +71,7 @@ export function parseSignature(signature: string): SignatureNode[] {
 		char: string,
 		arrayDepth: number,
 		structDepth: number,
+		dictDepth: number,
 		inArray: boolean,
 	): SignatureNode {
 		if (!KNOWN_TYPES.has(char)) {
@@ -88,7 +90,7 @@ export function parseSignature(signature: string): SignatureNode[] {
 				if (element === null) {
 					throw new Error(`Bad signature "${signature}": array with no element type`);
 				}
-				children.push(parseOne(element, arrayDepth + 1, structDepth, true));
+				children.push(parseOne(element, arrayDepth + 1, structDepth, dictDepth, true));
 				return { type: 'a', child: children };
 			}
 			case '{':
@@ -96,13 +98,24 @@ export function parseSignature(signature: string): SignatureNode[] {
 				if (char === '{' && !inArray) {
 					throw new Error(`Bad signature "${signature}": dict entry outside an array`);
 				}
-				if (structDepth >= MAX_STRUCT_DEPTH) {
-					throw new Error(`Bad signature "${signature}": nested deeper than ${MAX_STRUCT_DEPTH}`);
+				// Structs and dict entries have separate depth limits, as in libdbus.
+				if (char === '(' ? structDepth >= MAX_STRUCT_DEPTH : dictDepth >= MAX_DICT_DEPTH) {
+					throw new Error(
+						`Bad signature "${signature}": nested deeper than ${char === '(' ? MAX_STRUCT_DEPTH : MAX_DICT_DEPTH}`,
+					);
 				}
 				const close = CONTAINER_CLOSE[char];
 				let element = next();
 				while (element !== null && element !== close) {
-					children.push(parseOne(element, arrayDepth, structDepth + 1, false));
+					children.push(
+						parseOne(
+							element,
+							arrayDepth,
+							char === '(' ? structDepth + 1 : structDepth,
+							char === '{' ? dictDepth + 1 : dictDepth,
+							false,
+						),
+					);
 					element = next();
 				}
 				if (element === null) {
@@ -132,7 +145,7 @@ export function parseSignature(signature: string): SignatureNode[] {
 	const nodes: SignatureNode[] = [];
 	let char = next();
 	while (char !== null) {
-		nodes.push(parseOne(char, 0, 0, false));
+		nodes.push(parseOne(char, 0, 0, 0, false));
 		char = next();
 	}
 	return nodes;
