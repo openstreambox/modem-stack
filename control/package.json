@@ -56,10 +56,14 @@
 		"verify:consumers": "bun run scripts/verify-consumers.ts",
 		"verify:tarball": "bun run scripts/assert-tarball-shape.ts",
 		"test": "bun test",
+		"fuzz": "FUZZ_SECONDS=8 bun test --timeout 60000 src/fuzz",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
 		"@httptoolkit/dbus-native": "0.1.5",
 		"zod": "4.4.3"
+	},
+	"devDependencies": {
+		"fast-check": "^4.11.0"
 	}
 }
