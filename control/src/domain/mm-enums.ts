@@ -171,11 +171,19 @@ export interface Mm3gppLacCi {
 // with a different token count is not a shape this build should guess at.
 const LAC_CI_TOKENS = 5;
 
+// What each token can be. MCC is `%.3s` of the operator code and MNC the rest of it, so
+// they are decimal digits; LAC, CI and TAC are `%lX`, so hex of at most 64 bits. An empty
+// LAC or TAC is a RAT that has none; an empty CI is not a cell.
+const MCC_PATTERN = /^\d{3}$/;
+const MNC_PATTERN = /^\d{2,3}$/;
+const HEX_PATTERN = /^[0-9A-Fa-f]{1,16}$/;
+
 /**
  * Decode the `3gpp-lac-ci` location string, or `undefined` when it is not that shape.
  *
- * A token count other than five, or an empty MCC/MNC/CI, decodes to nothing rather than
- * to a partially-populated record: a cell identifier that is wrong is worse than one
+ * A token count other than five, or a token that is not what MM prints in that position
+ * (a three-digit MCC, a two- or three-digit MNC, hex LAC, CI and TAC), decodes to nothing
+ * rather than to a partially-populated record: a cell identifier that is wrong is worse than one
  * that is missing, because only the second is visible as missing.
  */
 export function decode3gppLacCi(value: string | undefined): Mm3gppLacCi | undefined {
@@ -185,7 +193,15 @@ export function decode3gppLacCi(value: string | undefined): Mm3gppLacCi | undefi
 	const [mcc, mnc, locationAreaCode, cellId, trackingAreaCode] = tokens.map((token) =>
 		token.trim(),
 	) as [string, string, string, string, string];
-	if (mcc === '' || mnc === '' || cellId === '') return undefined;
+	if (!MCC_PATTERN.test(mcc) || !MNC_PATTERN.test(mnc) || !HEX_PATTERN.test(cellId)) {
+		return undefined;
+	}
+	if (
+		(locationAreaCode !== '' && !HEX_PATTERN.test(locationAreaCode)) ||
+		(trackingAreaCode !== '' && !HEX_PATTERN.test(trackingAreaCode))
+	) {
+		return undefined;
+	}
 	return { mcc, mnc, locationAreaCode, cellId, trackingAreaCode };
 }
 
