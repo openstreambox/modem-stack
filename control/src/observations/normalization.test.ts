@@ -20,6 +20,7 @@ import { viewEnvelope } from './envelope';
 import { metricUnknownClass, type NormalizedMetric } from './metric';
 import type { NormalizedModemObservation } from './model';
 import { redactObservationDiagnostics } from './provenance';
+import { parseJsonRecord } from './raw';
 import { normalizeHilinkObservation } from './sources/hilink';
 import { normalizeModemManagerObservation } from './sources/modemmanager';
 import { normalizeUfiObservation } from './sources/ufi';
@@ -341,5 +342,26 @@ describe('no raw vendor field is dropped during normalization', () => {
 				expect(Object.hasOwn(normalized.diagnostics.raw, key)).toBe(true);
 			}
 		}
+	});
+});
+
+describe('JSON record bodies', () => {
+	test('a field named __proto__ stays a field and does not become the prototype', () => {
+		const record = parseJsonRecord('{"__proto__":[1,2],"signalbar":"4"}');
+		expect(Object.keys(record ?? {})).toEqual(['__proto__', 'signalbar']);
+		expect(Object.getPrototypeOf(record)).toBe(Object.prototype);
+	});
+
+	test('UFI keeps a params field named __proto__ as a field', () => {
+		const envelope = normalizeUfiObservation(
+			{
+				...UFI_FIXTURE,
+				sysinfo: '{"reply":"ok","__proto__":[1],"params":{"__proto__":[2],"cellid":"3344"}}',
+			},
+			CONTEXT,
+		);
+		const { raw } = observation(envelope).diagnostics;
+		expect(raw['sysinfo.__proto__']).toBeDefined();
+		expect(raw['sysinfo.cellid']).toBe('3344');
 	});
 });

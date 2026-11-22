@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import fc from 'fast-check';
 import { budget } from '../../test-support/fuzz-budget';
-import { fixtureContext, MM_FIXTURE } from '../../test-support/observation-fixtures';
+import { fixtureContext, MM_FIXTURE, UFI_FIXTURE } from '../../test-support/observation-fixtures';
 import { parseMmVersion } from '../backend/features';
 import { parseNmVersion } from '../backend/nm-auto-apn';
 import { parseTerse } from '../backend/nmcli-runner';
@@ -24,7 +24,12 @@ import {
 	parseZteSignal,
 } from '../hardware/router-parsers';
 import { parseNmeaFix } from '../location/nmea';
-import { normalizeModemManagerObservation, type RawFieldValue } from '../observations';
+import {
+	normalizeModemManagerObservation,
+	normalizeUfiObservation,
+	type RawFieldValue,
+} from '../observations';
+import { viewEnvelope } from '../observations/envelope';
 import { flattenXmlBody, parseJsonRecord } from '../observations/raw';
 import { parseSmsListOutput, parseSmsRecordOutput } from '../sms/mmcli-parse';
 import { parseUsbDevices } from '../usb-mode/usb-devices-parse';
@@ -191,6 +196,54 @@ describe('router signal models carry only finite readings', () => {
 					}
 				}
 			}),
+			budget(),
+		);
+	});
+});
+
+describe('JSON records', () => {
+	test('every field of a JSON object survives as a field', () => {
+		const names = fc.oneof(
+			fc.constantFrom('__proto__', 'constructor', 'toString', 'hasOwnProperty'),
+			fc.string({ maxLength: 8 }),
+		);
+		fc.assert(
+			fc.property(
+				fc.array(fc.tuple(names, fc.jsonValue({ maxDepth: 2 })), { maxLength: 6 }),
+				(entries) => {
+					const body = `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${JSON.stringify(v)}`).join(',')}}`;
+					const expected = Object.keys(JSON.parse(body));
+					expect(Object.keys(parseJsonRecord(body) ?? {})).toEqual(expected);
+				},
+			),
+			budget(),
+		);
+	});
+});
+
+describe('UFI bodies', () => {
+	test('every params field of a UFI reply is retained', () => {
+		const names = fc.oneof(
+			fc.constantFrom('__proto__', 'constructor', 'toString'),
+			fc.string({ minLength: 1, maxLength: 8 }),
+		);
+		fc.assert(
+			fc.property(
+				fc.array(fc.tuple(names, fc.jsonValue({ maxDepth: 1 })), { maxLength: 5 }),
+				(params) => {
+					const body = `{"reply":"ok","params":{${params
+						.map(([k, v]) => `${JSON.stringify(k)}:${JSON.stringify(v)}`)
+						.join(',')}}}`;
+					const view = viewEnvelope(
+						normalizeUfiObservation({ ...UFI_FIXTURE, sysinfo: body }, fixtureContext()),
+					);
+					if (view.kind === 'unavailable') throw new Error('UFI normalization was unavailable');
+					const { raw } = view.value.diagnostics;
+					for (const key of Object.keys(JSON.parse(body).params)) {
+						expect(`sysinfo.${key}` in raw).toBe(true);
+					}
+				},
+			),
 			budget(),
 		);
 	});

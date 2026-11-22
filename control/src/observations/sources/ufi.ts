@@ -146,22 +146,25 @@ export function normalizeUfiObservation(
 	});
 }
 
-/** `{reply, params}` flattened to one level — `params` members keep their own names. */
+/**
+ * `{reply, params}` flattened to one level — `params` members keep their own names.
+ * Built with `Object.fromEntries` so a device field named `__proto__` stays a field.
+ */
 function flattenUfiEnvelope(
 	parsed: Readonly<Record<string, unknown>> | undefined,
 ): Record<string, RawFieldValue> {
-	const out: Record<string, RawFieldValue> = {};
 	if (parsed === undefined) {
-		return out;
+		return {};
 	}
+	const entries: [string, RawFieldValue][] = [];
 	for (const [key, value] of Object.entries(parsed)) {
 		if (key === 'params' && typeof value === 'object' && value !== null && !Array.isArray(value)) {
 			for (const [field, param] of Object.entries(value as Record<string, unknown>)) {
-				out[field] = normalizeRawValue(param);
+				entries.push([field, normalizeRawValue(param)]);
 			}
 			continue;
 		}
-		out[key] = normalizeRawValue(value);
+		entries.push([key, normalizeRawValue(value)]);
 	}
-	return out;
+	return Object.fromEntries(entries);
 }

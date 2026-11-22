@@ -184,11 +184,11 @@ export function parseJsonRecord(body: string): Readonly<Record<string, RawFieldV
 	if (parsed === undefined) {
 		return undefined;
 	}
-	const out: Record<string, RawFieldValue> = {};
-	for (const [field, value] of Object.entries(parsed)) {
-		out[field] = normalizeRawValue(value);
-	}
-	return out;
+	// `fromEntries` defines own properties, so a device field named `__proto__` is kept as
+	// a field rather than swapping the record's prototype and vanishing from its keys.
+	return Object.fromEntries(
+		Object.entries(parsed).map(([field, value]) => [field, normalizeRawValue(value)]),
+	);
 }
 
 /**
