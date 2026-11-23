@@ -147,6 +147,13 @@ Also included:
     APN never connected. The floor is now 7 fields, with the IPv6 DNS pair
     read only when present.
 
+  * Empty bearer ids in +CGCONTRDP. Some networks (T-Mobile US) leave the
+    bearer id empty and answer with one line per IP family. The bearer
+    parses the answer itself, by cid and address family, instead of using
+    the generic parser, and treats a missing answer as non-fatal once
+    +CGPADDR has given the address. A +CGACT=1 refused with CME error 5847
+    reuses the context when +CGACT? reports it already active.
+
 The code originates in the BELABOX ModemManager fork, forward-ported from
 1.23-era ModemManager onto current main. Original commits:
 

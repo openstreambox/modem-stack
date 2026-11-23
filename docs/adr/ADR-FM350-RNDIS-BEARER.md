@@ -98,6 +98,36 @@ toggle confirmed causality: `ATZ` returned CME 59 after both 2 seconds and 32 se
 `ATZ0` returned `OK`. Restoring the override made the first enable succeed; registration moved
 to `home`, packet service to `attached`, and the plugin activated context 0 with `+CGACT`.
 
+### 2.3 Follow-up: the forward-port's `+CGCONTRDP` regression (2026-11-23)
+
+On T-Mobile US (firmware `81600.0000.00.29.18.01`, mode 41) every connection failed. The first
+attempt activated context 0 and read its address with `+CGPADDR`, then failed with
+"Couldn't match +CGCONTRDP response". The module answers with an empty bearer id and one line
+per IP family, the IPv6 line in dotted decimal:
+
+```
++CGCONTRDP: 0,,"wholesale","","","<v4 dns1>","<v4 dns2>","","",0,,1436,,,,,,,1,1,0,"1",0,65535
++CGCONTRDP: 0,,"wholesale","","","<v6 dns1>","<v6 dns2>","","",0,,1436,,,,,,,1,1,0,"1",0,65535
+```
+
+The forward-port had switched to the generic `mm_3gpp_parse_cgcontrdp_response`, whose pattern
+requires a number in the bearer id field; BELABOX's original bearer split the line on commas
+and tolerated it. Context 0 is the attach bearer and ModemManager does not deactivate it, so
+every later attempt rewrote its PDP type and sent `+CGACT=1,0` again, which the module refused
+with `+CME ERROR: 5847`. Deactivating context 0 is not an option (`+CGACT=0` on the attach
+bearer returned `+CME ERROR: 4106`).
+
+The carried `fm350gl` bearer now parses `+CGCONTRDP` itself: lines are matched by cid,
+classified by the family of their first address, and quoted fields may hold commas (`"1,7"`
+on Verizon). IPv4 DNS comes from the IPv4 line, IPv6 DNS from the IPv6 line, and the MTU field
+is applied when present. A missing or unparsable answer only logs a warning, because
+`+CGPADDR` already supplied the address: the IPv4 configuration falls back to a /32 with the
+address as gateway and no DNS. When `+CGACT=1,<cid>` fails with 5847 and `+CGACT?` reports the
+context active, the bearer reuses it; `+CGPADDR` still has to return an address of the
+requested family. The change is folded into patch 0001, so the series stays at three patches.
+Unit tests cover the T-Mobile and Verizon answers (with documentation-range addresses) and the
+5847 classification. Hardware confirmation on T-Mobile is pending.
+
 ---
 
 ## 3. Upstream 1.24 does not cover this device (POLICY §1.1 — "why a rebuild cannot")
