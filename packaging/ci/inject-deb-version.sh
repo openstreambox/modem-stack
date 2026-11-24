@@ -143,6 +143,18 @@ else
 	SUFFIX="$(derive_release_suffix "$SOURCE")"
 fi
 
+# Downstream rebuild of an already released source (fork-only). EXACT_SUFFIX replaces the
+# suffix derived above with an explicit '~ceralive.N+<name><M>' value: it keeps the released
+# counter N and appends a downstream label, so the result sorts above ~ceralive.N and below the
+# next upstream ~ceralive.N+1, and can never equal a version upstream publishes (upstream
+# never uses '+').
+if [ -n "${EXACT_SUFFIX:-}" ]; then
+	[[ "$EXACT_SUFFIX" =~ ^~ceralive\.[1-9][0-9]*\+[a-z]+[1-9][0-9]*$ ]] ||
+		die "EXACT_SUFFIX='$EXACT_SUFFIX' must look like '~ceralive.N+name1'"
+	log "source '$SOURCE': EXACT_SUFFIX overrides the derived suffix '$SUFFIX'"
+	SUFFIX="$EXACT_SUFFIX"
+fi
+
 DIR="$(recipe_dir "$SOURCE")"
 CHANGELOG="$PKG_ROOT/$DIR/debian/changelog"
 [ -r "$CHANGELOG" ] || die "source '$SOURCE' changelog '$CHANGELOG' is not readable"

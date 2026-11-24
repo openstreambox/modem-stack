@@ -48,6 +48,7 @@ require "ci/suffix-contract.sh"
 require "ci/test-suffix-coherence-manifest.sh"
 require "ci/test-release-workflow-wiring.sh"
 require "ci/test-fm350-patch-contract.sh"
+require "ci/test-inject-exact-suffix.sh"
 require "ci/check-upstream-freshness.sh"
 require "ci/test-check-upstream-freshness.sh"
 require "ci/build-companion.sh"
@@ -121,6 +122,9 @@ bash "$HERE/test-release-workflow-wiring.sh" >/dev/null
 
 echo "  running FM350 patch contract..."
 bash "$HERE/test-fm350-patch-contract.sh" >/dev/null
+
+echo "  running exact downstream suffix contract..."
+bash "$HERE/test-inject-exact-suffix.sh" >/dev/null
 
 # The upstream freshness proof is offline and fixture-driven, so it needs no docker, no network
 # and no built .deb — exactly the kind of invariant this lightweight lane should exercise.
