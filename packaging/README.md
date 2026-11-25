@@ -66,7 +66,8 @@ proves plugin binding, bearer activation, and routable IPv4.
 
 The fourth entry, `0004-modem-helpers-accept-two-digit-act-in-creg.patch`, is a generic
 ModemManager fix carried on the openstreambox release line: the `+CREG`/`+CGREG`/`+CEREG`
-patterns accept the two-digit AcT values 10 to 13 (5G core and NR), and the `+CREG`/`+CGREG`
+patterns accept the two-digit AcT values 10 to 13 (5G core and NR) where a line has no
+competing reading, and the `+CREG`/`+CGREG`
 `<lac>` is read as a TAC on NR. Without it a modem that registers on 5G SA after
 ModemManager's registration attempt has stopped polling, such as the FM350-GL, stays at
 `searching`. It is authored for this fork, records `Forwarded: no` (not offered upstream yet),

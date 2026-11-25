@@ -9,8 +9,10 @@ Description: Accept two-digit AcT values in +CREG, +CGREG and +CEREG
  (5G core and NR) lines matched nothing. A modem that registers on 5G SA after
  ModemManager's registration attempt has stopped polling stays in 'searching',
  because its registered URCs are dropped and no periodic check runs while
- unsolicited registration reports are enabled. Also reads the +CREG/+CGREG
- <lac> as a TAC on NR.
+ unsolicited registration reports are enabled. Only the unpadded values 10-13
+ are added, and only where the line has no competing reading, so every line
+ that parsed before parses the same way. Also reads the +CREG/+CGREG <lac> as
+ a TAC on NR.
  .
  Not offered upstream yet. The same change applies to upstream main, which
  still accepts one AcT digit in these patterns.
@@ -39,23 +41,27 @@ NR while ModemManager reported 'searching' for four minutes; one
 --3gpp-register-home made it read the registration.
 
 Accept the four two-digit values, unpadded, in the AcT field of those
-patterns. Padded or other values keep failing, so a padded cell id or an
-unquoted RAC is not read as an AcT, and [7] takes a two-digit AcT only
-after an unpadded <stat>; this keeps "+CGREG: 1,0005,2816,3,11" on [9].
+patterns, and only where the line can't also be read in a competing
+layout: the AT port tries the URC patterns in reverse order and the
+responses in forward order, so a padded <stat>, a padded or two-digit
+cell id or an unquoted RAC could otherwise pass for an AcT. In [5], [9]
+and [10] the field after <stat> must not be a (padded) digit; in [7] the
+<ci> must not be a value 0 to 13. Every line that parsed before parses
+the same way in both orders.
 Also take the <lac> of +CREG and +CGREG as a TAC on NR, where there are
 no location areas, so the three reports agree on the TAC.
 
 The tests cover the FM350-GL layouts (quoted TAC, 36-bit NR cell id, the
-RAC field in +CGREG), AcT 10 and 13, two replayed sequences and two
+RAC field in +CGREG), AcT 10 and 13, two replayed sequences and five
 layouts a looser pattern would misread, each in forward order and in the
 reverse order the AT port tries URC handlers. TAC and cell id values are
 synthetic.
 ---
  src/mm-broadband-modem.c       |  18 +-
- src/mm-modem-helpers.c         |  34 +++-
+ src/mm-modem-helpers.c         |  38 +++-
  src/mm-modem-helpers.h         |   5 +
- src/tests/test-modem-helpers.c | 307 +++++++++++++++++++++++++++++++++
- 4 files changed, 354 insertions(+), 10 deletions(-)
+ src/tests/test-modem-helpers.c | 314 +++++++++++++++++++++++++++++++++
+ 4 files changed, 365 insertions(+), 10 deletions(-)
 
 diff --git a/src/mm-broadband-modem.c b/src/mm-broadband-modem.c
 index c14bce3f..e561008b 100644
@@ -112,10 +118,10 @@ index c14bce3f..e561008b 100644
              lac = 0;
          }
 diff --git a/src/mm-modem-helpers.c b/src/mm-modem-helpers.c
-index 8687196e..2cfaa53a 100644
+index 8687196e..508457ff 100644
 --- a/src/mm-modem-helpers.c
 +++ b/src/mm-modem-helpers.c
-@@ -851,6 +851,14 @@ mm_modem_3gpp_registration_state_is_registered (MMModem3gppRegistrationState sta
+@@ -851,6 +851,18 @@ mm_modem_3gpp_registration_state_is_registered (MMModem3gppRegistrationState sta
  
  /*************************************************************************/
  
@@ -123,40 +129,44 @@ index 8687196e..2cfaa53a 100644
 + * a 5GCN), 11 (NR connected to a 5GCN), 12 (NG-RAN) and 13 (E-UTRA-NR dual
 + * connectivity), which modems on 5G standalone networks report in +CREG,
 + * +CGREG and +CEREG as well as in +C5GREG. Only those four values are
-+ * accepted as two digits, and without zero padding, so that a padded cell id
-+ * or an unquoted RAC is not taken for an AcT. For the same reason [7] takes a
-+ * two-digit AcT only after an unpadded <stat>: "+CGREG: 1,0005,2816,3,11"
-+ * keeps matching [9] (<stat>,<lac>,<ci>,<AcT>,<RAC>) as before. */
++ * accepted as two digits, without zero padding, and only where the line can't
++ * also be read in a competing layout, since the AT port tries the URC
++ * patterns in reverse order and the responses in forward order:
++ *  - in [5], [9] and [10] the field after <stat> must not be a (padded)
++ *    digit, which would make it the <stat> of [3] or [7];
++ *  - in [7] the <ci> must not be a value 0 to 13, which would make it the
++ *    <AcT> of [9] ("+CGREG: 1,0005,2816,3,11" keeps matching [9]).
++ * Lines that match neither way keep their one-digit parse or no parse. */
  static const gchar *creg_regex[] = {
      /* +CREG: <stat>                      (GSM 07.07 CREG=1 unsolicited) */
      [0] = "\\+(CREG|CGREG|CEREG|C5GREG):\\s*0*([0-9])",
-@@ -862,19 +870,19 @@ static const gchar *creg_regex[] = {
+@@ -862,19 +874,19 @@ static const gchar *creg_regex[] = {
      [3] = "\\+(CREG|CGREG|CEREG):\\s*([0-9]),\\s*([0-9])\\s*,\\s*([^,]*)\\s*,\\s*([^,\\s]*)",
      [4] = "\\+(CREG|CGREG|CEREG):\\s*0*([0-9]),\\s*0*([0-9])\\s*,\\s*(\"[^,]*\")\\s*,\\s*(\"[^,\\s]*\")",
      /* +CREG: <stat>,<lac>,<ci>,<AcT>     (ETSI 27.007 CREG=2 unsolicited) */
 -    [5] = "\\+(CREG|CGREG|CEREG):\\s*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*([0-9])",
 -    [6] = "\\+(CREG|CGREG|CEREG):\\s*0*([0-9])\\s*,\\s*(\"[^,\\s]*\")\\s*,\\s*(\"[^,\\s]*\")\\s*,\\s*0*([0-9])",
-+    [5] = "\\+(CREG|CGREG|CEREG):\\s*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*([0-9]|1[0-3])",
++    [5] = "\\+(CREG|CGREG|CEREG):\\s*([0-9])\\s*,\\s*(?|([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*([0-9])|(?!0*[0-9]\\s*,)([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*(1[0-3]))",
 +    [6] = "\\+(CREG|CGREG|CEREG):\\s*0*([0-9])\\s*,\\s*(\"[^,\\s]*\")\\s*,\\s*(\"[^,\\s]*\")\\s*,\\s*(?|0*([0-9])|(1[0-3]))",
      /* +CREG: <n>,<stat>,<lac>,<ci>,<AcT> (ETSI 27.007 solicited and some CREG=2 unsolicited) */
 -    [7] = "\\+(CREG|CGREG|CEREG):\\s*0*([0-9]),\\s*0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*0*([0-9])",
-+    [7] = "\\+(CREG|CGREG|CEREG):\\s*0*([0-9]),\\s*(?|0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*0*([0-9])|([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*(1[0-3]))",
++    [7] = "\\+(CREG|CGREG|CEREG):\\s*0*([0-9]),\\s*(?|0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*0*([0-9])|0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*(?!(?:0*[0-9]|1[0-3])\\s*,)([^,\\s]*)\\s*,\\s*(1[0-3]))",
      /* +CREG: <n>,<stat>,<lac>,<ci>,<AcT?>,<something> (Samsung Wave S8500) */
      /* '<CR><LF>+CREG: 2,1,000B,2816, B, C2816<CR><LF><CR><LF>OK<CR><LF>' */
      [8] = "\\+(CREG|CGREG):\\s*0*([0-9]),\\s*0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*[^,\\s]*",
      /* +CREG: <stat>,<lac>,<ci>,<AcT>,<RAC> (ETSI 27.007 v9.20 CREG=2 unsolicited with RAC) */
 -    [9] = "\\+(CREG|CGREG):\\s*0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*0*([0-9])\\s*,\\s*([^,\\s]*)",
-+    [9] = "\\+(CREG|CGREG):\\s*0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*(?|0*([0-9])|(1[0-3]))\\s*,\\s*([^,\\s]*)",
++    [9] = "\\+(CREG|CGREG):\\s*0*([0-9])\\s*,\\s*(?|([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*0*([0-9])|(?!0*[0-9]\\s*,)([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*(1[0-3]))\\s*,\\s*([^,\\s]*)",
      /* +CEREG: <stat>,<lac>,<rac>,<ci>,<AcT>     (ETSI 27.007 v8.6 CREG=2 unsolicited with RAC) */
 -    [10] = "\\+(CEREG):\\s*0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*0*([0-9])",
-+    [10] = "\\+(CEREG):\\s*0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*(?|0*([0-9])|(1[0-3]))",
++    [10] = "\\+(CEREG):\\s*0*([0-9])\\s*,\\s*(?|([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*0*([0-9])|(?!0*[0-9]\\s*,)([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*(1[0-3]))",
      /* +CEREG: <n>,<stat>,<lac>,<rac>,<ci>,<AcT> (ETSI 27.007 v8.6 CREG=2 solicited with RAC) */
 -    [11] = "\\+(CEREG):\\s*0*([0-9]),\\s*0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*0*([0-9])",
 +    [11] = "\\+(CEREG):\\s*0*([0-9]),\\s*0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*(?|0*([0-9])|(1[0-3]))",
      /* +C5GREG: <stat>,<lac>,<ci>,<AcT>,<Allowed_NSSAI_length>,<Allowed_NSSAI>   (ETSI 27.007 CREG=2 unsolicited) */
      [12] = "\\+(C5GREG):\\s*([0-9]+)\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*([0-9]+)\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)",
      /* +C5GREG: <n>,<stat>,<lac>,<ci>,<AcT>,<Allowed_NSSAI_length>,<Allowed_NSSAI> (ETSI 27.007 solicited) */
-@@ -2169,6 +2177,20 @@ mm_3gpp_parse_creg_response (GMatchInfo                    *info,
+@@ -2169,6 +2181,20 @@ mm_3gpp_parse_creg_response (GMatchInfo                    *info,
  
  /*************************************************************************/
  
@@ -194,10 +204,10 @@ index 133c7006..8f3bec1b 100644
  gboolean mm_3gpp_parse_cmgf_test_response (const gchar *reply,
                                             gboolean *sms_pdu_supported,
 diff --git a/src/tests/test-modem-helpers.c b/src/tests/test-modem-helpers.c
-index b4dcda2b..940f0c6d 100644
+index b4dcda2b..5027da93 100644
 --- a/src/tests/test-modem-helpers.c
 +++ b/src/tests/test-modem-helpers.c
-@@ -1638,6 +1638,298 @@ test_c5greg2_unsolicited (void *f, gpointer d)
+@@ -1638,6 +1638,305 @@ test_c5greg2_unsolicited (void *f, gpointer d)
      test_creg_match ("C5GREG=2", FALSE, reply, data, &result);
  }
  
@@ -461,8 +471,9 @@ index b4dcda2b..940f0c6d 100644
 +}
 +
 +/* Layouts that a looser two-digit AcT would misread: a padded <stat> next to a
-+ * padded cell id, and an unquoted two-digit RAC after a padded LAC. Both must
-+ * keep the parse they had with one-digit AcT patterns, in either order. */
++ * padded or two-digit cell id, an unquoted two-digit RAC after a padded LAC,
++ * and a padded <stat> before a two-digit AcT. Each must keep the parse it had
++ * with one-digit AcT patterns, or get the right one, in either order. */
 +static void
 +test_creg_two_digit_act_no_collision (void *f, gpointer d)
 +{
@@ -477,6 +488,12 @@ index b4dcda2b..940f0c6d 100644
 +    /* <stat>,<lac>,<ci>,<AcT> with a padded cell id that is not an AcT */
 +    test_creg_both_orders (data, FALSE, "\r\n+CREG: 2,1,0001,0010\r\n",
 +                           MM_MODEM_3GPP_REGISTRATION_STATE_HOME, 0x0001, 0x0010, MM_MODEM_ACCESS_TECHNOLOGY_UNKNOWN);
++    /* <n>,<stat>,<lac>,<ci>,<AcT> with a padded <stat> and an unpadded cell id 11 */
++    test_creg_both_orders (data, FALSE, "\r\n+CGREG: 2,05,000B,11,3\r\n",
++                           MM_MODEM_3GPP_REGISTRATION_STATE_ROAMING, 0x000B, 0x11, MM_MODEM_ACCESS_TECHNOLOGY_EDGE);
++    /* A padded <stat> before a two-digit AcT is still a <stat>, not a TAC */
++    test_creg_both_orders (data, TRUE, "+CEREG: 2,01,\"1F00\",\"12345A00B\",11",
++                           MM_MODEM_3GPP_REGISTRATION_STATE_HOME, 0x1F00, (gulong) G_GUINT64_CONSTANT (0x12345A00B), MM_MODEM_ACCESS_TECHNOLOGY_5GNR);
 +}
 +
 +static void
@@ -496,7 +513,7 @@ index b4dcda2b..940f0c6d 100644
  /*****************************************************************************/
  /* Test CSCS responses */
  
-@@ -5019,6 +5311,21 @@ int main (int argc, char **argv)
+@@ -5019,6 +5318,21 @@ int main (int argc, char **argv)
      g_test_suite_add (suite, TESTCASE (test_c5greg2_solicited, reg_data));
      g_test_suite_add (suite, TESTCASE (test_c5greg2_unsolicited, reg_data));
  

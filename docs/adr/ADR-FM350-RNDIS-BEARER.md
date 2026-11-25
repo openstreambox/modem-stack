@@ -170,21 +170,27 @@ played out in the field is inferred, because the capture holds no URC from the m
   either. That is harmless here because the firmware mirrors the registration into the legacy
   reports.
 - `src/mm-iface-modem-3gpp.c` starts periodic registration checks only when setting up or
-  enabling unsolicited registration reports fails. They succeed on this module. Otherwise
-  ModemManager polls only inside a registration attempt (every 3 s, bounded, 60 s for a
-  register request), so once that window has closed the dropped URCs are the only signal. A
-  module that registers after that stays at `searching` until something polls again.
+  enabling unsolicited registration reports fails. They succeed on this module. Without them,
+  the registration is read again only by event-driven checks: a registration attempt (every
+  3 s, bounded, 60 s for a register request) or a one-shot check such as enabling 3GPP
+  location. Nothing schedules one while the modem sits at `searching`, so once the attempt
+  has ended the dropped URCs are the only signal, and a module that registers after that
+  stays at `searching` until something triggers a check.
 
-Patch `0004` accepts AcT 10 to 13, unpadded, in those six fields; other values keep failing,
-and pattern 7 takes a two-digit AcT only after an unpadded `<stat>`, so a padded cell id or an
-unquoted RAC is not read as an AcT. It also reads the `+CREG`/`+CGREG` `<lac>` as a TAC on NR,
+Patch `0004` accepts AcT 10 to 13, unpadded, in those six fields, and only where the line
+has no competing reading: the AT port tries URC patterns in reverse order (handlers are
+prepended) and responses in forward order, so a padded `<stat>`, a padded or two-digit cell id
+or an unquoted RAC could otherwise pass for an AcT. In patterns 5, 9 and 10 the field after
+`<stat>` must not be a (padded) digit; in pattern 7 the `<ci>` must not be a value 0 to 13. It also reads the `+CREG`/`+CGREG` `<lac>` as a TAC on NR,
 so the three reports agree on the location. Tests in `src/tests/test-modem-helpers.c` cover the
 module's layouts solicited and unsolicited, AcT 10 and 13, the radio-on sequence
 (`2,4` → `2,2` → `2,1,…,11`), a searching-then-URC sequence (a plausible model of the field
-event, built from the recorded answers in their 27.007 unsolicited form) and two layouts a
-looser pattern misreads. Each runs in forward order and in the reverse order in which the AT
-port tries URC handlers (they are prepended). Over every `+CxREG` string in the 1.24.2 tests,
-in both orders, the patch changes no result except lines that did not parse before. There is
+event, built from the recorded answers in their 27.007 unsolicited form) and five layouts a
+looser pattern misreads, each in both orders. Over the strings in the 1.24.2 tests plus a
+generated set of about 52,000 `+CREG`/`+CGREG`/`+CEREG` lines (padded and unpadded fields, 4- to
+6-field layouts), each parsed as response and as URC in both orders, no line that parsed
+before changes its result, the set of order-dependent lines is the same as before, and every
+newly parsed line carries an unpadded 10 to 13. There is
 no hardware confirmation yet. Until a build with `0004` runs on a box, the field fallback stays
 the `--3gpp-register-home` nudge above.
 
