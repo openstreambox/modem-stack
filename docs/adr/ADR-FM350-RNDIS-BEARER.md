@@ -140,6 +140,46 @@ T-Mobile and Verizon answers as captured (documentation-range addresses), the ol
 layout including a short mask, a bare address followed by a gateway, and a malformed line next
 to a good one. Hardware confirmation on T-Mobile is pending.
 
+### 2.4 Follow-up: registration on 5G SA is missed after a replug (2026-11-25)
+
+After a replug on T-Mobile US 5G SA (n41, firmware `81600.0000.00.29.18.01`) the module
+registered (`AT+CEREG?` read `2,1,…,11`, `+COPS` AcT 11), but ModemManager reported
+`searching` for four minutes and sent no registration query in a 50 s debug capture. One
+`mmcli -m <n> --3gpp-register-home` made it read the registration, and the bearer connected
+16 s later.
+
+The cause is in the generic layer, not in the `fm350gl` plugin, which overrides no 3GPP
+registration step:
+
+- The module reports 5GS registration through `+CREG`, `+CGREG` and `+CEREG` with AcT 11 (NR
+  connected to a 5GCN). Recorded answers, with synthetic TAC and cell id:
+  `+CREG: 2,1,"1F00","12345A00B",11`, `+CGREG: 2,1,"1F00","12345A00B",11,"FF"`,
+  `+CEREG: 2,1,"1F00","12345A00B",11`. While searching it answers
+  `+CEREG: 2,2,"FFFF","0FFFFFFF",0`.
+- In `src/mm-modem-helpers.c` (`creg_regex[]`, entries 5, 6, 7, 9, 10 and 11) every pattern
+  that captures an AcT field accepts one digit only. So the searching answers (AcT 0) parse and
+  the registered ones (AcT 11) match nothing. The only registered line that parses is the
+  solicited `+CGREG` with its trailing RAC, which falls through to the six-field pattern 8. The
+  AcT-to-access-technology mapping already handles 10 to 13. Upstream main has the same
+  one-digit AcT in these patterns.
+- `+C5GREG` is never used for this module: it advertises no 5G mode in `AT+WS46=?`
+  (`12,22,25,28,29,30,31`), so the modem has no 5GNR capability and ModemManager neither
+  enables nor polls 5GS registration. That alone is harmless here, because the module mirrors
+  the 5GS registration into `+CEREG`.
+- `src/mm-iface-modem-3gpp.c` starts periodic registration checks only when setting up or
+  enabling unsolicited registration reports fails. They succeed on this module. Otherwise
+  ModemManager polls only inside a registration attempt (every 3 s, bounded, 60 s for a
+  register request), so once that window has closed nothing polls again and the dropped URCs
+  are the only signal. A modem that registers after that stays at `searching` until something
+  polls by hand.
+
+Patch `0004` accepts one or more digits in those six AcT fields. Tests in
+`src/tests/test-modem-helpers.c` cover the module's layouts solicited and unsolicited, AcT 10
+and 13, and replay the radio-on sequence (`2,4` → `2,2` → `2,1,…,11`) and the
+searching-then-URC sequence; they fail on unpatched 1.24.2 and on upstream main. There is no
+hardware confirmation yet. Until a build with `0004` runs on a box, the field fallback stays
+the `--3gpp-register-home` nudge above.
+
 ---
 
 ## 3. Upstream 1.24 does not cover this device (POLICY §1.1 — "why a rebuild cannot")

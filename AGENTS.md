@@ -14,7 +14,7 @@ Canonical branch: `main`. Sole remote: `origin` → `https://github.com/CERALIVE
 |-----------|----------|------|
 | `control/` | `@ceralive/modem-control` (npm) | TypeScript control library — domain model, ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, injected admission/ownership/USB-hub ports, USB composition-mode model + evidence-bundle **ingestion seam**, data-usage sampler + the **usage-policy write surface**, capability-module **support-claim taxonomy + detection**, and the **band-lock** vocabulary + certification catalog (see §§ below). Published to public npm under `@ceralive` as **built ESM + `.d.ts`** across seven entry points (see § PUBLISHED PACKAGE SURFACE). |
 | `cli/` | `modem-control` (bench CLI) | The iteration surface: `probe`/`watch`/`apply`/`set-usb-mode`/`usage`/`certify`/`hil-cycle`, compiled `arm64`+`amd64`, run against real modems. Not published to npm. |
-| `packaging/` | ModemManager stack `.deb`s **+ the first-party companion** | Trixie rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — packaging only, not a fork. libmbim/libqmi/libqrtr-glib remain source-unmodified; ModemManager carries exactly three owner-approved, BELABOX-derived FM350-GL patches, hardware-validated on the carrier-mediated USB topology after restoring the original `ATZ0` first-enable override (see `POLICY.md` and `docs/adr/ADR-FM350-RNDIS-BEARER.md`) — PLUS `ceralive-modem-support`, the `Architecture: all` first-party companion that owns CeraLive's generic modem system assets. |
+| `packaging/` | ModemManager stack `.deb`s **+ the first-party companion** | Trixie rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — packaging only, not a fork. libmbim/libqmi/libqrtr-glib remain source-unmodified; ModemManager carries three owner-approved, BELABOX-derived FM350-GL patches, hardware-validated on the carrier-mediated USB topology after restoring the original `ATZ0` first-enable override (see `POLICY.md` and `docs/adr/ADR-FM350-RNDIS-BEARER.md`), plus one generic registration-parser fix on the openstreambox release line (`0004`, two-digit AcT values in `+CREG`/`+CGREG`/`+CEREG`) — PLUS `ceralive-modem-support`, the `Architecture: all` first-party companion that owns CeraLive's generic modem system assets. |
 
 `control/` + `cli/` are one **Bun** workspace. `packaging/` builds in a **trixie** container —
 the suite the device image runs; `build-stack.sh` refuses a container whose suite disagrees.
@@ -1592,6 +1592,8 @@ own-number blocks in `control/src/redact.test.ts`.
 patch later is an architecture gate (rationale + filed upstream MR + review). The sole current
 exception is the exact three-patch BELABOX-derived FM350-GL series approved by the project
 owner on 2026-08-22; its MR is still drafted, not filed, and its hardware drill remains open.
+The openstreambox release line additionally carries patch `0004` (two-digit AcT values in
+`+CREG`/`+CGREG`/`+CEREG`), recorded as a fork carry in `POLICY.md` §1; it is not upstream yet.
 This narrow exception does not weaken the default that udev/plugin/device-support improvements
 go **upstream first**. The Phase A → Phase B scope boundary is **version-gated at
 `v1.0.0`**: CeraUI / device-image / apt integration is out of scope through `v0.2.0` and
@@ -1640,8 +1642,8 @@ bun run verify:consumers  # install the tarball into standalone Node 26 + Bun pr
 `packaging/` runs in a `debian:$TARGET_SUITE` container (default `trixie`); its contract/verification scripts live
 under `packaging/ci/`. The four sources' `debian/` recipes are checked in at
 `packaging/<Source>/debian/` (`ModemManager`, `libmbim`, `libqmi`, `libqrtr-glib` — matching
-their pinned salsa commits except the suite adaptations and the approved ModemManager
-FM350-GL series documented in `packaging/SUITE-ADAPTATIONS.md`).
+their pinned salsa commits except the suite adaptations and the ModemManager patch series
+(the approved FM350-GL patches and the fork's `0004`) documented in `packaging/SUITE-ADAPTATIONS.md`).
 `packaging/ci/build-stack.sh <amd64|arm64>` (suite-parameterized: `TARGET_SUITE`, default
 `trixie`) rebuilds
 them from source in the mandatory bootstrap order (`libqrtr-glib → libmbim → libqmi →

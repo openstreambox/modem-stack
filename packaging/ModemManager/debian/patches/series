@@ -1,3 +1,4 @@
 0001-fm350gl-forward-port-rndis-bearer-and-modes.patch
 0002-fm350gl-disable-crashing-cpol-commands.patch
 0003-fm350gl-accept-extended-cops-scan-format.patch
+0004-modem-helpers-accept-two-digit-act-in-creg.patch

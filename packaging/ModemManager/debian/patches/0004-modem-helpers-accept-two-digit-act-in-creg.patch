@@ -1,0 +1,317 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Paul Golmann <mail@pje-web.de>
+Date: Wed, 25 Nov 2026 07:38:14 +0100
+Subject: [PATCH] modem-helpers: accept two-digit AcT values in +CREG, +CGREG
+ and +CEREG
+
+Description: Accept two-digit AcT values in +CREG, +CGREG and +CEREG
+ The registration patterns only accepted a one-digit AcT field, so AcT 10-13
+ (5G core and NR) lines matched nothing. A modem that registers on 5G SA after
+ ModemManager's initial registration check stays in 'searching', because its
+ registered URCs are dropped and no periodic check runs while unsolicited
+ registration reports are enabled.
+Author: Paul Golmann <mail@pje-web.de>
+Forwarded: no (not yet offered upstream; the same change applies to upstream main)
+Applied-Upstream: no
+Upstream-Status: NOT UPSTREAM; upstream main still accepts one AcT digit in these patterns
+Rationale: The FM350-GL reports 5G SA registration as +CEREG/+CREG/+CGREG with AcT 11. Without this, it can stay 'searching' after a replug or module restart until the registration is polled again by hand.
+Last-Update: 2026-11-25
+
+27.007 defines AcT 10 (E-UTRA connected to a 5GCN), 11 (NR connected to a
+5GCN), 12 (NG-RAN) and 13 (E-UTRA-NR dual connectivity), and
+get_mm_access_tech_from_etsi_access_tech() already maps them. The +CREG,
++CGREG and +CEREG patterns that carry an AcT field only accept one digit
+there, so a line such as
+
+  +CEREG: 1,"1F00","12345A00B",11
+
+matches none of them. Only +C5GREG and the six-field +CGREG layout with a
+trailing RAC accepted two digits.
+
+A modem on a 5G standalone network that reports its registration through
++CREG/+CGREG/+CEREG, as the Fibocom FM350-GL does, therefore gets stuck:
+the searching answers it gives before registration (AcT 0) parse, the
+registered ones (AcT 11) don't, and the unsolicited reports are dropped
+as unmatched. Since unsolicited registration reports are enabled, no
+periodic registration check runs, so the modem stays in 'searching'
+until something polls the registration again (e.g. a manual
+--3gpp-register-home). Seen after a replug on a US 5G SA network: the
+module had registered on NR, ModemManager reported 'searching' for four
+minutes, and one --3gpp-register-home made it read the registration.
+
+Accept one or more digits in the AcT field of those patterns. The tests
+cover the FM350-GL layouts (quoted TAC, 36-bit NR cell id, the RAC field
+in +CGREG), AcT 10 and 13, and replay the searching-then-registered
+sequences, solicited and unsolicited. TAC and cell id values are
+synthetic.
+---
+ src/mm-modem-helpers.c         |  16 ++-
+ src/tests/test-modem-helpers.c | 204 +++++++++++++++++++++++++++++++++
+ 2 files changed, 214 insertions(+), 6 deletions(-)
+
+diff --git a/src/mm-modem-helpers.c b/src/mm-modem-helpers.c
+index 8687196e..0ac33d23 100644
+--- a/src/mm-modem-helpers.c
++++ b/src/mm-modem-helpers.c
+@@ -851,6 +851,10 @@ mm_modem_3gpp_registration_state_is_registered (MMModem3gppRegistrationState sta
+ 
+ /*************************************************************************/
+ 
++/* The <AcT> field may take two digits: 27.007 defines 10 (E-UTRA connected to
++ * a 5GCN), 11 (NR connected to a 5GCN), 12 (NG-RAN) and 13 (E-UTRA-NR dual
++ * connectivity), which modems on 5G standalone networks report in +CREG,
++ * +CGREG and +CEREG as well as in +C5GREG. */
+ static const gchar *creg_regex[] = {
+     /* +CREG: <stat>                      (GSM 07.07 CREG=1 unsolicited) */
+     [0] = "\\+(CREG|CGREG|CEREG|C5GREG):\\s*0*([0-9])",
+@@ -862,19 +866,19 @@ static const gchar *creg_regex[] = {
+     [3] = "\\+(CREG|CGREG|CEREG):\\s*([0-9]),\\s*([0-9])\\s*,\\s*([^,]*)\\s*,\\s*([^,\\s]*)",
+     [4] = "\\+(CREG|CGREG|CEREG):\\s*0*([0-9]),\\s*0*([0-9])\\s*,\\s*(\"[^,]*\")\\s*,\\s*(\"[^,\\s]*\")",
+     /* +CREG: <stat>,<lac>,<ci>,<AcT>     (ETSI 27.007 CREG=2 unsolicited) */
+-    [5] = "\\+(CREG|CGREG|CEREG):\\s*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*([0-9])",
+-    [6] = "\\+(CREG|CGREG|CEREG):\\s*0*([0-9])\\s*,\\s*(\"[^,\\s]*\")\\s*,\\s*(\"[^,\\s]*\")\\s*,\\s*0*([0-9])",
++    [5] = "\\+(CREG|CGREG|CEREG):\\s*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*([0-9]+)",
++    [6] = "\\+(CREG|CGREG|CEREG):\\s*0*([0-9])\\s*,\\s*(\"[^,\\s]*\")\\s*,\\s*(\"[^,\\s]*\")\\s*,\\s*0*([0-9]+)",
+     /* +CREG: <n>,<stat>,<lac>,<ci>,<AcT> (ETSI 27.007 solicited and some CREG=2 unsolicited) */
+-    [7] = "\\+(CREG|CGREG|CEREG):\\s*0*([0-9]),\\s*0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*0*([0-9])",
++    [7] = "\\+(CREG|CGREG|CEREG):\\s*0*([0-9]),\\s*0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*0*([0-9]+)",
+     /* +CREG: <n>,<stat>,<lac>,<ci>,<AcT?>,<something> (Samsung Wave S8500) */
+     /* '<CR><LF>+CREG: 2,1,000B,2816, B, C2816<CR><LF><CR><LF>OK<CR><LF>' */
+     [8] = "\\+(CREG|CGREG):\\s*0*([0-9]),\\s*0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*[^,\\s]*",
+     /* +CREG: <stat>,<lac>,<ci>,<AcT>,<RAC> (ETSI 27.007 v9.20 CREG=2 unsolicited with RAC) */
+-    [9] = "\\+(CREG|CGREG):\\s*0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*0*([0-9])\\s*,\\s*([^,\\s]*)",
++    [9] = "\\+(CREG|CGREG):\\s*0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*0*([0-9]+)\\s*,\\s*([^,\\s]*)",
+     /* +CEREG: <stat>,<lac>,<rac>,<ci>,<AcT>     (ETSI 27.007 v8.6 CREG=2 unsolicited with RAC) */
+-    [10] = "\\+(CEREG):\\s*0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*0*([0-9])",
++    [10] = "\\+(CEREG):\\s*0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*0*([0-9]+)",
+     /* +CEREG: <n>,<stat>,<lac>,<rac>,<ci>,<AcT> (ETSI 27.007 v8.6 CREG=2 solicited with RAC) */
+-    [11] = "\\+(CEREG):\\s*0*([0-9]),\\s*0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*0*([0-9])",
++    [11] = "\\+(CEREG):\\s*0*([0-9]),\\s*0*([0-9])\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*0*([0-9]+)",
+     /* +C5GREG: <stat>,<lac>,<ci>,<AcT>,<Allowed_NSSAI_length>,<Allowed_NSSAI>   (ETSI 27.007 CREG=2 unsolicited) */
+     [12] = "\\+(C5GREG):\\s*([0-9]+)\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)\\s*,\\s*([0-9]+)\\s*,\\s*([^,\\s]*)\\s*,\\s*([^,\\s]*)",
+     /* +C5GREG: <n>,<stat>,<lac>,<ci>,<AcT>,<Allowed_NSSAI_length>,<Allowed_NSSAI> (ETSI 27.007 solicited) */
+diff --git a/src/tests/test-modem-helpers.c b/src/tests/test-modem-helpers.c
+index b4dcda2b..010af595 100644
+--- a/src/tests/test-modem-helpers.c
++++ b/src/tests/test-modem-helpers.c
+@@ -1638,6 +1638,198 @@ test_c5greg2_unsolicited (void *f, gpointer d)
+     test_creg_match ("C5GREG=2", FALSE, reply, data, &result);
+ }
+ 
++/*
++ * 27.007 AcT values 10 to 13 (E-UTRA connected to a 5GCN, NR connected to a
++ * 5GCN, NG-RAN, E-UTRA-NR dual connectivity) take two digits. Modems on a 5G
++ * standalone network report them in +CREG, +CGREG and +CEREG, e.g. the
++ * Fibocom FM350-GL. TAC and cell ID values below are synthetic; the layout,
++ * the 36-bit NR cell ID and the trailing "FF" RAC in +CGREG are as the module
++ * sends them.
++ */
++
++static void
++test_creg2_5gsa_solicited (void *f, gpointer d)
++{
++    RegTestData *data = (RegTestData *) d;
++    const char *reply = "+CREG: 2,1,\"1F00\",\"12345A00B\",11";
++    const CregResult result = { MM_MODEM_3GPP_REGISTRATION_STATE_HOME, 0x1F00, (gulong) G_GUINT64_CONSTANT (0x12345A00B), MM_MODEM_ACCESS_TECHNOLOGY_5GNR, 7, FALSE, FALSE, FALSE };
++
++    test_creg_match ("FM350-GL CREG=2 on 5G SA", TRUE, reply, data, &result);
++}
++
++static void
++test_creg2_5gsa_unsolicited (void *f, gpointer d)
++{
++    RegTestData *data = (RegTestData *) d;
++    const char *reply = "\r\n+CREG: 1,\"1F00\",\"12345A00B\",11\r\n";
++    const CregResult result = { MM_MODEM_3GPP_REGISTRATION_STATE_HOME, 0x1F00, (gulong) G_GUINT64_CONSTANT (0x12345A00B), MM_MODEM_ACCESS_TECHNOLOGY_5GNR, 5, FALSE, FALSE, FALSE };
++
++    test_creg_match ("FM350-GL CREG=2 on 5G SA", FALSE, reply, data, &result);
++}
++
++static void
++test_cgreg2_5gsa_solicited (void *f, gpointer d)
++{
++    RegTestData *data = (RegTestData *) d;
++    const char *reply = "+CGREG: 2,1,\"1F00\",\"12345A00B\",11,\"FF\"";
++    const CregResult result = { MM_MODEM_3GPP_REGISTRATION_STATE_HOME, 0x1F00, (gulong) G_GUINT64_CONSTANT (0x12345A00B), MM_MODEM_ACCESS_TECHNOLOGY_5GNR, 8, TRUE, FALSE, FALSE };
++
++    test_creg_match ("FM350-GL CGREG=2 on 5G SA", TRUE, reply, data, &result);
++}
++
++static void
++test_cgreg2_5gsa_unsolicited (void *f, gpointer d)
++{
++    RegTestData *data = (RegTestData *) d;
++    const char *reply = "\r\n+CGREG: 1,\"1F00\",\"12345A00B\",11,\"FF\"\r\n";
++    const CregResult result = { MM_MODEM_3GPP_REGISTRATION_STATE_HOME, 0x1F00, (gulong) G_GUINT64_CONSTANT (0x12345A00B), MM_MODEM_ACCESS_TECHNOLOGY_5GNR, 9, TRUE, FALSE, FALSE };
++
++    test_creg_match ("FM350-GL CGREG=2 on 5G SA", FALSE, reply, data, &result);
++}
++
++static void
++test_cereg2_5gsa_solicited (void *f, gpointer d)
++{
++    RegTestData *data = (RegTestData *) d;
++    const char *reply = "+CEREG: 2,1,\"1F00\",\"12345A00B\",11";
++    const CregResult result = { MM_MODEM_3GPP_REGISTRATION_STATE_HOME, 0x1F00, (gulong) G_GUINT64_CONSTANT (0x12345A00B), MM_MODEM_ACCESS_TECHNOLOGY_5GNR, 7, FALSE, TRUE, FALSE };
++
++    test_creg_match ("FM350-GL CEREG=2 on 5G SA", TRUE, reply, data, &result);
++}
++
++static void
++test_cereg2_5gsa_unsolicited (void *f, gpointer d)
++{
++    RegTestData *data = (RegTestData *) d;
++    const char *reply = "\r\n+CEREG: 1,\"1F00\",\"12345A00B\",11\r\n";
++    const CregResult result = { MM_MODEM_3GPP_REGISTRATION_STATE_HOME, 0x1F00, (gulong) G_GUINT64_CONSTANT (0x12345A00B), MM_MODEM_ACCESS_TECHNOLOGY_5GNR, 5, FALSE, TRUE, FALSE };
++
++    test_creg_match ("FM350-GL CEREG=2 on 5G SA", FALSE, reply, data, &result);
++}
++
++static void
++test_cereg2_searching_solicited (void *f, gpointer d)
++{
++    RegTestData *data = (RegTestData *) d;
++    const char *reply = "+CEREG: 2,2,\"FFFF\",\"0FFFFFFF\",0";
++    const CregResult result = { MM_MODEM_3GPP_REGISTRATION_STATE_SEARCHING, 0xFFFF, 0x0FFFFFFF, MM_MODEM_ACCESS_TECHNOLOGY_GSM, 7, FALSE, TRUE, FALSE };
++
++    test_creg_match ("FM350-GL CEREG=2 while searching", TRUE, reply, data, &result);
++}
++
++static void
++test_cereg2_eutra_5gcn_unsolicited (void *f, gpointer d)
++{
++    RegTestData *data = (RegTestData *) d;
++    const char *reply = "\r\n+CEREG: 5,\"1F00\",\"79D903\",10\r\n";
++    const CregResult result = { MM_MODEM_3GPP_REGISTRATION_STATE_ROAMING, 0x1F00, 0x79D903, MM_MODEM_ACCESS_TECHNOLOGY_LTE, 5, FALSE, TRUE, FALSE };
++
++    test_creg_match ("CEREG=2 on E-UTRA connected to a 5GCN", FALSE, reply, data, &result);
++}
++
++static void
++test_cereg2_endc_rac_unsolicited (void *f, gpointer d)
++{
++    RegTestData *data = (RegTestData *) d;
++    const char *reply = "\r\n+CEREG: 1, 1F00, 20 ,79D903 ,13\r\n";
++    const CregResult result = { MM_MODEM_3GPP_REGISTRATION_STATE_HOME, 0x1F00, 0x79D903, MM_MODEM_ACCESS_TECHNOLOGY_LTE | MM_MODEM_ACCESS_TECHNOLOGY_5GNR, 10, FALSE, TRUE, FALSE };
++
++    test_creg_match ("CEREG=2 with RAC on E-UTRA-NR dual connectivity", FALSE, reply, data, &result);
++}
++
++/*
++ * Replays what ModemManager reads from an FM350-GL around a 5G SA
++ * registration, and checks that the last line leaves it registered. Before
++ * two-digit AcT values were accepted, every registered line of the module
++ * failed to match while the searching ones matched, so a modem that was
++ * still searching when the unsolicited reports were enabled stayed in
++ * 'searching' for good: the registered URCs were dropped and no periodic
++ * registration check runs once unsolicited reports are enabled.
++ */
++
++typedef struct {
++    gboolean     solicited;
++    const gchar *line;
++} CregReplayStep;
++
++static void
++replay_creg_sequence (RegTestData                  *data,
++                      const CregReplayStep         *steps,
++                      guint                         n_steps,
++                      MMModem3gppRegistrationState *out_state,
++                      MMModemAccessTechnology      *out_act)
++{
++    guint i;
++
++    for (i = 0; i < n_steps; i++) {
++        g_autoptr(GMatchInfo)        info = NULL;
++        g_autoptr(GError)            error = NULL;
++        GPtrArray                   *array;
++        guint                        j;
++        MMModem3gppRegistrationState state = MM_MODEM_3GPP_REGISTRATION_STATE_UNKNOWN;
++        MMModemAccessTechnology      act = MM_MODEM_ACCESS_TECHNOLOGY_UNKNOWN;
++        gulong                       lac = 0;
++        gulong                       ci = 0;
++        gboolean                     cgreg = FALSE;
++        gboolean                     cereg = FALSE;
++        gboolean                     c5greg = FALSE;
++
++        g_debug ("Replaying %s '%s'...", steps[i].solicited ? "response" : "URC", steps[i].line);
++
++        array = steps[i].solicited ? data->solicited_creg : data->unsolicited_creg;
++        for (j = 0; j < array->len; j++) {
++            if (g_regex_match (g_ptr_array_index (array, j), steps[i].line, 0, &info))
++                break;
++            g_clear_pointer (&info, g_match_info_free);
++        }
++        g_assert_nonnull (info);
++
++        g_assert_true (mm_3gpp_parse_creg_response (info, NULL, &state, &lac, &ci, &act, &cgreg, &cereg, &c5greg, &error));
++        g_assert_no_error (error);
++        *out_state = state;
++        *out_act = act;
++    }
++}
++
++static void
++test_creg_5gsa_radio_on_sequence (void *f, gpointer d)
++{
++    /* Polled answers after AT+CFUN=1, in the order the module gave them */
++    static const CregReplayStep steps[] = {
++        { TRUE, "+CEREG: 2,4,\"FFFF\",\"0FFFFFFF\",0" },
++        { TRUE, "+CEREG: 2,2,\"FFFF\",\"0FFFFFFF\",0" },
++        { TRUE, "+CEREG: 2,2,\"FFFF\",\"0FFFFFFF\",0" },
++        { TRUE, "+CEREG: 2,1,\"1F00\",\"12345A00B\",11" },
++    };
++    MMModem3gppRegistrationState state = MM_MODEM_3GPP_REGISTRATION_STATE_UNKNOWN;
++    MMModemAccessTechnology      act = MM_MODEM_ACCESS_TECHNOLOGY_UNKNOWN;
++
++    replay_creg_sequence ((RegTestData *) d, steps, G_N_ELEMENTS (steps), &state, &act);
++    g_assert_cmpuint (state, ==, MM_MODEM_3GPP_REGISTRATION_STATE_HOME);
++    g_assert_cmpuint (act, ==, MM_MODEM_ACCESS_TECHNOLOGY_5GNR);
++}
++
++static void
++test_creg_5gsa_registered_after_enable_sequence (void *f, gpointer d)
++{
++    /* Searching at the initial registration check, then registered on NR
++     * reported by URCs only */
++    static const CregReplayStep steps[] = {
++        { TRUE,  "+CREG: 2,2" },
++        { TRUE,  "+CGREG: 2,2" },
++        { TRUE,  "+CEREG: 2,2,\"FFFF\",\"0FFFFFFF\",0" },
++        { FALSE, "\r\n+CREG: 1,\"1F00\",\"12345A00B\",11\r\n" },
++        { FALSE, "\r\n+CGREG: 1,\"1F00\",\"12345A00B\",11,\"FF\"\r\n" },
++        { FALSE, "\r\n+CEREG: 1,\"1F00\",\"12345A00B\",11\r\n" },
++    };
++    MMModem3gppRegistrationState state = MM_MODEM_3GPP_REGISTRATION_STATE_UNKNOWN;
++    MMModemAccessTechnology      act = MM_MODEM_ACCESS_TECHNOLOGY_UNKNOWN;
++
++    replay_creg_sequence ((RegTestData *) d, steps, G_N_ELEMENTS (steps), &state, &act);
++    g_assert_cmpuint (state, ==, MM_MODEM_3GPP_REGISTRATION_STATE_HOME);
++    g_assert_cmpuint (act, ==, MM_MODEM_ACCESS_TECHNOLOGY_5GNR);
++}
++
+ /*****************************************************************************/
+ /* Test CSCS responses */
+ 
+@@ -5019,6 +5211,18 @@ int main (int argc, char **argv)
+     g_test_suite_add (suite, TESTCASE (test_c5greg2_solicited, reg_data));
+     g_test_suite_add (suite, TESTCASE (test_c5greg2_unsolicited, reg_data));
+ 
++    g_test_suite_add (suite, TESTCASE (test_creg2_5gsa_solicited, reg_data));
++    g_test_suite_add (suite, TESTCASE (test_creg2_5gsa_unsolicited, reg_data));
++    g_test_suite_add (suite, TESTCASE (test_cgreg2_5gsa_solicited, reg_data));
++    g_test_suite_add (suite, TESTCASE (test_cgreg2_5gsa_unsolicited, reg_data));
++    g_test_suite_add (suite, TESTCASE (test_cereg2_5gsa_solicited, reg_data));
++    g_test_suite_add (suite, TESTCASE (test_cereg2_5gsa_unsolicited, reg_data));
++    g_test_suite_add (suite, TESTCASE (test_cereg2_searching_solicited, reg_data));
++    g_test_suite_add (suite, TESTCASE (test_cereg2_eutra_5gcn_unsolicited, reg_data));
++    g_test_suite_add (suite, TESTCASE (test_cereg2_endc_rac_unsolicited, reg_data));
++    g_test_suite_add (suite, TESTCASE (test_creg_5gsa_radio_on_sequence, reg_data));
++    g_test_suite_add (suite, TESTCASE (test_creg_5gsa_registered_after_enable_sequence, reg_data));
++
+     g_test_suite_add (suite, TESTCASE (test_creg_cgreg_multi_unsolicited, reg_data));
+     g_test_suite_add (suite, TESTCASE (test_creg_cgreg_multi2_unsolicited, reg_data));
+ 
+-- 
+2.53.0
+

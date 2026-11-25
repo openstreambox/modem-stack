@@ -13,7 +13,7 @@ The four sources are rebuilt from their **pinned sid `debian/<ver>-<rev>` packag
 libqrtr-glib carry zero source patches. ModemManager carries only the project-owner-approved,
 three-patch BELABOX-derived FM350-GL series documented in
 [`ADR-FM350-RNDIS-BEARER.md`](../docs/adr/ADR-FM350-RNDIS-BEARER.md) and
-[`POLICY.md`](../POLICY.md).
+[`POLICY.md`](../POLICY.md), plus the fork's generic registration-parser fix `0004`.
 
 That pinned packaging is **sid packaging, and sid is ahead of trixie** — so it does not build
 unmodified here either. A small set of **packaging-metadata** adaptations is applied, limited
@@ -149,8 +149,8 @@ Two meson flags in `override_dh_auto_configure` (companions to adaptation 2):
 
 ## ModemManager — approved FM350-GL source patch series
 
-`ModemManager/debian/patches/series` carries exactly three patches against the pinned
-ModemManager 1.24.2 source:
+`ModemManager/debian/patches/series` carries four patches against the pinned
+ModemManager 1.24.2 source, the first three of them BELABOX-derived:
 
 1. A 1.24-native forward-port of BELABOX's FM350-GL USB/RNDIS bearer and `+GTACT` mode
    handling, derived from commits `da01610c46c581b0c6f2acd0ac50f5bba666efdf`,
@@ -162,11 +162,17 @@ ModemManager 1.24.2 source:
    `b4377c5028a0de4435b86f7aad9114e9443d69e4`.
 3. The extended `+COPS` parser fix and regression test from
    `43e09a768e3855f3afb93e517902c1e0e25ed676`.
+4. Two-digit AcT values in the `+CREG`/`+CGREG`/`+CEREG` patterns, with replay tests
+   (openstreambox fork carry, see below).
 
 All three retain BELABOX author `rationalsa <belaboxproject@gmail.com>` and record
 `Forwarded: no`. The project owner approved this exact carry on 2026-08-22 under the narrow
 POLICY exception. Builds prove source compatibility only; the real-board bearer drill remains
 required before any hardware support claim.
+
+Patch 4 is the fork's own change, not BELABOX-derived and not covered by the 2026-08-22 owner
+approval. It records `Forwarded: no` and is retired once upstream ModemManager accepts two-digit
+AcT values in these patterns.
 
 ## One CI-side trixie change that is NOT a packaging adaptation
 
@@ -178,7 +184,7 @@ This is test-harness plumbing, not a `debian/` deviation, and no source recipe r
 
 | Source        | `debian/control`                                   | `debian/rules`            | Source patches |
 |---------------|----------------------------------------------------|---------------------------|----------------|
-| ModemManager  | GI swap; debhelper `13.11.6`→`13.11.4`; `systemd-dev`→`udev` | +2 meson install-dir pins | 3-patch FM350-GL series above |
+| ModemManager  | GI swap; debhelper `13.11.6`→`13.11.4`; `systemd-dev`→`udev` | +2 meson install-dir pins | 3-patch FM350-GL series + `0004` above |
 | libmbim       | GI swap                                             | (pristine)                | none |
 | libqmi        | GI swap                                             | (pristine)                | none |
 | libqrtr-glib  | GI swap                                             | (pristine)                | none |

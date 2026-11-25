@@ -35,6 +35,14 @@ the BELABOX author, originating commit SHA(s), rationale, and `Forwarded: no` st
 series is hardware-verified on the carrier-mediated USB topology and must be retired when
 upstream ships equivalent support.
 
+**Fork release-line carry, registration parser, 2026-11-25.** The openstreambox release line
+(`osb/release/*`) also carries `0004-modem-helpers-accept-two-digit-act-in-creg.patch`: the
+generic `+CREG`/`+CGREG`/`+CEREG` patterns accept two-digit AcT values, without which a modem
+that registers on 5G SA after the initial check (the FM350-GL) stays at `searching`. This is
+an openstreambox decision with its own review, not part of the CeraLive owner exception above.
+Requirement 2 is **not met**: the change is written against upstream main and not filed yet.
+The patch records `Forwarded: no` and is retired when upstream accepts the change.
+
 ## 2. Upstream-contribution-first
 
 For anything that is genuinely a modem-support improvement — udev rules, ModemManager
