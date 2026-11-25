@@ -149,35 +149,43 @@ registered (`AT+CEREG?` read `2,1,…,11`, `+COPS` AcT 11), but ModemManager rep
 16 s later.
 
 The cause is in the generic layer, not in the `fm350gl` plugin, which overrides no 3GPP
-registration step:
+registration step. The parser defect is confirmed from source and recorded answers; how it
+played out in the field is inferred, because the capture holds no URC from the module:
 
-- The module reports 5GS registration through `+CREG`, `+CGREG` and `+CEREG` with AcT 11 (NR
-  connected to a 5GCN). Recorded answers, with synthetic TAC and cell id:
+- The firmware reports 5GS registration through the legacy `+CREG`, `+CGREG` and `+CEREG`
+  with AcT 11 (NR connected to a 5GCN). Recorded answers, with synthetic TAC and cell id:
   `+CREG: 2,1,"1F00","12345A00B",11`, `+CGREG: 2,1,"1F00","12345A00B",11,"FF"`,
   `+CEREG: 2,1,"1F00","12345A00B",11`. While searching it answers
   `+CEREG: 2,2,"FFFF","0FFFFFFF",0`.
 - In `src/mm-modem-helpers.c` (`creg_regex[]`, entries 5, 6, 7, 9, 10 and 11) every pattern
   that captures an AcT field accepts one digit only. So the searching answers (AcT 0) parse and
-  the registered ones (AcT 11) match nothing. The only registered line that parses is the
-  solicited `+CGREG` with its trailing RAC, which falls through to the six-field pattern 8. The
-  AcT-to-access-technology mapping already handles 10 to 13. Upstream main has the same
-  one-digit AcT in these patterns.
-- `+C5GREG` is never used for this module: it advertises no 5G mode in `AT+WS46=?`
-  (`12,22,25,28,29,30,31`), so the modem has no 5GNR capability and ModemManager neither
-  enables nor polls 5GS registration. That alone is harmless here, because the module mirrors
-  the 5GS registration into `+CEREG`.
+  the registered ones (AcT 11) match nothing, URCs included. The only registered line that
+  parses is the solicited `+CGREG` with its trailing RAC, which falls through to the six-field
+  pattern 8; that is why any fresh poll (the nudge, or another one-shot check such as enabling
+  3GPP location) reads the modem as registered. The AcT-to-access-technology mapping already
+  handles 10 to 13. Upstream main has the same one-digit AcT in these patterns.
+- `+C5GREG` is not used for this module: 1.24.2's generic code enables only `+CREG`, `+CGREG`
+  and `+CEREG` reports, and since the module lists no 5G mode in `AT+WS46=?`
+  (`12,22,25,28,29,30,31`) it gets no 5GNR capability, so 5GS registration is never polled
+  either. That is harmless here because the firmware mirrors the registration into the legacy
+  reports.
 - `src/mm-iface-modem-3gpp.c` starts periodic registration checks only when setting up or
   enabling unsolicited registration reports fails. They succeed on this module. Otherwise
   ModemManager polls only inside a registration attempt (every 3 s, bounded, 60 s for a
-  register request), so once that window has closed nothing polls again and the dropped URCs
-  are the only signal. A modem that registers after that stays at `searching` until something
-  polls by hand.
+  register request), so once that window has closed the dropped URCs are the only signal. A
+  module that registers after that stays at `searching` until something polls again.
 
-Patch `0004` accepts one or more digits in those six AcT fields. Tests in
-`src/tests/test-modem-helpers.c` cover the module's layouts solicited and unsolicited, AcT 10
-and 13, and replay the radio-on sequence (`2,4` → `2,2` → `2,1,…,11`) and the
-searching-then-URC sequence; they fail on unpatched 1.24.2 and on upstream main. There is no
-hardware confirmation yet. Until a build with `0004` runs on a box, the field fallback stays
+Patch `0004` accepts AcT 10 to 13, unpadded, in those six fields; other values keep failing,
+and pattern 7 takes a two-digit AcT only after an unpadded `<stat>`, so a padded cell id or an
+unquoted RAC is not read as an AcT. It also reads the `+CREG`/`+CGREG` `<lac>` as a TAC on NR,
+so the three reports agree on the location. Tests in `src/tests/test-modem-helpers.c` cover the
+module's layouts solicited and unsolicited, AcT 10 and 13, the radio-on sequence
+(`2,4` → `2,2` → `2,1,…,11`), a searching-then-URC sequence (a plausible model of the field
+event, built from the recorded answers in their 27.007 unsolicited form) and two layouts a
+looser pattern misreads. Each runs in forward order and in the reverse order in which the AT
+port tries URC handlers (they are prepended). Over every `+CxREG` string in the 1.24.2 tests,
+in both orders, the patch changes no result except lines that did not parse before. There is
+no hardware confirmation yet. Until a build with `0004` runs on a box, the field fallback stays
 the `--3gpp-register-home` nudge above.
 
 ---

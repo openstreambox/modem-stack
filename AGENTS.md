@@ -1593,7 +1593,8 @@ patch later is an architecture gate (rationale + filed upstream MR + review). Th
 exception is the exact three-patch BELABOX-derived FM350-GL series approved by the project
 owner on 2026-08-22; its MR is still drafted, not filed, and its hardware drill remains open.
 The openstreambox release line additionally carries patch `0004` (two-digit AcT values in
-`+CREG`/`+CGREG`/`+CEREG`), recorded as a fork carry in `POLICY.md` §1; it is not upstream yet.
+`+CREG`/`+CGREG`/`+CEREG`) under a separate release-line waiver in `POLICY.md` §1; it is not
+upstream yet.
 This narrow exception does not weaken the default that udev/plugin/device-support improvements
 go **upstream first**. The Phase A → Phase B scope boundary is **version-gated at
 `v1.0.0`**: CeraUI / device-image / apt integration is out of scope through `v0.2.0` and

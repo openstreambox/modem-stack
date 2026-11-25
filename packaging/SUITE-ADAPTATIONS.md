@@ -162,8 +162,8 @@ ModemManager 1.24.2 source, the first three of them BELABOX-derived:
    `b4377c5028a0de4435b86f7aad9114e9443d69e4`.
 3. The extended `+COPS` parser fix and regression test from
    `43e09a768e3855f3afb93e517902c1e0e25ed676`.
-4. Two-digit AcT values in the `+CREG`/`+CGREG`/`+CEREG` patterns, with replay tests
-   (openstreambox fork carry, see below).
+4. Two-digit AcT values (10 to 13) in the `+CREG`/`+CGREG`/`+CEREG` patterns and the NR TAC
+   in `+CREG`/`+CGREG`, with replay and collision tests (openstreambox fork carry, see below).
 
 All three retain BELABOX author `rationalsa <belaboxproject@gmail.com>` and record
 `Forwarded: no`. The project owner approved this exact carry on 2026-08-22 under the narrow
@@ -171,8 +171,9 @@ POLICY exception. Builds prove source compatibility only; the real-board bearer 
 required before any hardware support claim.
 
 Patch 4 is the fork's own change, not BELABOX-derived and not covered by the 2026-08-22 owner
-approval. It records `Forwarded: no` and is retired once upstream ModemManager accepts two-digit
-AcT values in these patterns.
+approval; it is carried under the openstreambox release-line waiver in `POLICY.md` §1. It
+records `Forwarded: no` and is retired once upstream ModemManager accepts two-digit AcT values
+in these patterns.
 
 ## One CI-side trixie change that is NOT a packaging adaptation
 
