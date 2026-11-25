@@ -11,7 +11,7 @@ publication is part of Phase B adoption, authorized from the `v1.0.0` release ta
 ## Sources (4 upstream rebuilds + 1 first-party companion)
 
 The four sources below remain pinned upstream rebuilds. Three carry no source patch;
-ModemManager carries only the reviewed FM350-GL series described below. The first-party
+ModemManager carries only the reviewed FM350-GL series and the registration-parser fix described below. The first-party
 [`ceralive-modem-support`](ceralive-modem-support/) companion keeps CeraLive-owned generic
 system assets out of every upstream recipe — see
 [First-party companion](#first-party-companion-ceralive-modem-support).
@@ -41,9 +41,9 @@ re-verified end-to-end by [`ci/verify-upstream-pins.sh`](ci/verify-upstream-pins
 Each source's `debian/` dir is checked in at `<Source>/debian/` (`ModemManager`, `libmbim`,
 `libqmi`, `libqrtr-glib`), based on its pinned salsa commit
 ([`upstream-pins.yaml`](upstream-pins.yaml) `salsa_commit_sha`). libmbim, libqmi, and
-libqrtr-glib carry no source patches. ModemManager adds only the three entries in
-`ModemManager/debian/patches/series`, each attributed to exact BELABOX commits and governed
-by the accepted FM350 ADR.
+libqrtr-glib carry no source patches. ModemManager adds only the four entries in
+`ModemManager/debian/patches/series`: three attributed to exact BELABOX commits and governed
+by the accepted FM350 ADR, and the fork's generic registration-parser fix `0004`.
 All four sources carry one shared suite adaptation — the GObject-introspection build-deps
 are swapped from the sid GI-1.80 set (`gir1.2-*-2.0-dev` + `gobject-introspection (>= 1.80)`)
 to the older `gobject-introspection` + `libgirepository1.0-dev` spelling, which remains a real
@@ -54,8 +54,8 @@ documented, with rationale, per-suite re-measurement, and diff shape, in
 
 ### Approved ModemManager source series
 
-`ModemManager/debian/patches/series` is intentionally non-empty and contains exactly three
-logical changes: the 1.24-native FM350-GL RNDIS bearer plus `+GTACT` mode support, the CPOL
+`ModemManager/debian/patches/series` is intentionally non-empty. Its first three entries are
+the approved FM350-GL logical changes: the 1.24-native FM350-GL RNDIS bearer plus `+GTACT` mode support, the CPOL
 crash-disable device row, and the standalone extended-`+COPS` parser fix with its regression
 test. Each DEP-3-style header credits `rationalsa <belaboxproject@gmail.com>`, names the exact
 BELABOX origin SHA(s), and records `Forwarded: no` because the upstream MR is drafted but not
@@ -63,6 +63,17 @@ filed. Project-owner approval is dated 2026-08-22 in the ADR and POLICY exceptio
 is build-tested and hardware-validated on the carrier-mediated USB topology; no PCIe support
 claim exists until the production-topology board drill
 proves plugin binding, bearer activation, and routable IPv4.
+
+The fourth entry, `0004-modem-helpers-accept-two-digit-act-in-creg.patch`, is a generic
+ModemManager fix carried on the openstreambox release line: the `+CREG`/`+CGREG`/`+CEREG`
+patterns accept the two-digit AcT values 10 to 13 (5G core and NR) where a line has no
+competing reading, and the `+CREG`/`+CGREG`
+`<lac>` is read as a TAC on NR. Without it a modem that registers on 5G SA after
+ModemManager's registration attempt has stopped polling, such as the FM350-GL, stays at
+`searching`. It is authored for this fork, records `Forwarded: no` (not offered upstream yet),
+and is covered by replay and collision tests in `src/tests/test-modem-helpers.c`, run in both
+the forward order and the reverse order the AT port tries URC handlers. See the ADR,
+section 2.4, and the fork carry in `POLICY.md` §1.
 
 [`ci/build-stack.sh`](ci/build-stack.sh) `<amd64|arm64>` rebuilds the **selected**
 sources in a `debian:$TARGET_SUITE` container (default `trixie`) in the mandatory bootstrap order
@@ -293,6 +304,6 @@ closed naming that source. The migration-continuity chain
 | [`ci/suffix-contract.sh`](ci/suffix-contract.sh) | SOURCED library — the `~ceralive` suffix contract in ONE place. `assert_group_coherence <pkg>=<ver>…` groups packages by owning source (derived from `expected-packages.txt`, never a second frozen list) and asserts each source's OWN internal coherence, so differing counters ACROSS sources pass while a source disagreeing with itself fails closed naming it. `prove_chain_ordered <base>` runs the **migration-continuity chain** — `~ceralive0.2.0 < ~ceralive1.0.0 < ~ceralive1.1.0 < ~ceralive.1 < ~ceralive.2 < ~ceralive.10 < <upstream>-<rev>` — through real `dpkg --compare-versions`; its legacy members are every version that exists as a published artifact today, so the chain is the proof that every fleet device upgrades cleanly into the counter scheme. Sourced by `test-package-contract.sh` (CHECK 5/6) and `test-suffix-coherence-manifest.sh` so the container lane and the host lane cannot prove different rules. |
 | [`ci/test-suffix-coherence-manifest.sh`](ci/test-suffix-coherence-manifest.sh) | The per-source-suffix + mixed-version-manifest contract — host-runnable, offline, **no docker**. Proves: sources at differing counters are accepted while an internally-mixed source fails closed naming itself; the full migration chain under real `dpkg` (with a non-vacuity control showing a lexical compare inverts `.2` vs `.10`); `generate-release-manifest.sh` over a MIXED staged set emits the new header, no `deb_version_suffix:`, and a row per staged deb at each source's own version; and a ZERO-UPSTREAM-BUILD set (only the companion fresh) keeps every upstream row at its carried counter with only the companion at the bare tag version. Every expected count is COUNTED from the fixture that produced it — no total is written down. |
 | [`ci/test-release-workflow-wiring.sh`](ci/test-release-workflow-wiring.sh) | The **static** proof that `release.yml`'s `build-deb` is wired the way the differential pipeline needs. It reads the workflow text and never dispatches a run: step presence, the ordering chain (previous-release resolution → detection → carry-forward staging → **every** executable `build-stack.sh` mention, comment lines excluded), `fetch-depth: 0` inside the `build-deb` slice specifically, and an awk detector for any `${{ }}` interpolated into a `run:` body. It exists because the invariant it guards fails SILENTLY — staging after the build still produces a green release, built against stock suite dependencies. `RELEASE_WORKFLOW_FILE` points it at a scratch copy for failure demonstrations, so the tracked workflow is never mutated. |
-| [`ci/test-fm350-patch-contract.sh`](ci/test-fm350-patch-contract.sh) | Static regression gate for the hardware-required FM350 first-enable override: the carried patch must install `enabling_modem_init`, send `Z0`, and never regress that override to core `Z` (which firmware `81600.0000.00.19.17.10` rejects with CME 59). It also requires the bearer's own `+CGCONTRDP` parser and its empty-bearer-id test, so the generic parser (which fails on T-Mobile US answers) does not come back. |
+| [`ci/test-fm350-patch-contract.sh`](ci/test-fm350-patch-contract.sh) | Static regression gate for the hardware-required FM350 first-enable override: the carried patch must install `enabling_modem_init`, send `Z0`, and never regress that override to core `Z` (which firmware `81600.0000.00.19.17.10` rejects with CME 59). It also requires the bearer's own `+CGCONTRDP` parser and its empty-bearer-id test, so the generic parser (which fails on T-Mobile US answers) does not come back, and keeps patch `0004` in the series with AcT captures for exactly 10 to 13 and its registration replay and collision tests. |
 | [`ci/resolve-tag.sh`](ci/resolve-tag.sh) | The **shared tag → peeled-commit-SHA resolver** used by `release.yml`. `resolve-tag.sh <repo-url> <tag>` asks the remote (`git ls-remote`, no clone) for both `refs/tags/<tag>` and `refs/tags/<tag>^{}`, prefers the **peeled** commit SHA (an annotated tag otherwise resolves to its tag object), prints it, and fails closed if the tag is absent or ambiguous. ONE script, called from tag-guard (pin every checkout), publish-npm (last-instant pre-publish TOCTOU re-check), and create-release (pre-create re-check) — no divergent copies. A caller detects a moved tag by comparing the output against the pinned SHA. |
 | [`ci/reconcile-release-assets.sh`](ci/reconcile-release-assets.sh) | The **immutable, manifest-complete release-asset reconciler** used by `release.yml`'s `create-release`. `reconcile-release-assets.sh <tag> <assets-dir>` takes a flat dir of the raw built debs + the manifest and: verifies the deb set equals the manifest sha256-exactly (missing/extra/corrupt ⇒ fail closed); stages each asset under its **own sanitized basename** (`~` → `.`, never relying on GitHub's upload mapping) and rejects any name **collision**; creates the release if absent; then for each staged asset uploads it if MISSING or integrity-compares (download + sha256) if it already EXISTS — matching ⇒ skip (idempotent), differing ⇒ fail closed (published assets are never overwritten); and finally verifies the live asset set equals the staged set. `RECONCILE_RELEASE_DIR=<dir>` selects a local mock backend for standalone testing. |

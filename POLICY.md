@@ -35,11 +35,24 @@ the BELABOX author, originating commit SHA(s), rationale, and `Forwarded: no` st
 series is hardware-verified on the carrier-mediated USB topology and must be retired when
 upstream ships equivalent support.
 
+**Fork release-line waiver, registration parser, 2026-11-25.** The openstreambox release line
+(`osb/release/*`) also carries `0004-modem-helpers-accept-two-digit-act-in-creg.patch`: the
+generic `+CREG`/`+CGREG`/`+CEREG` patterns accept the two-digit AcT values 10 to 13, without
+which a modem that registers on 5G SA after ModemManager's registration attempt (the FM350-GL)
+stays at `searching`. It is a second, separate waiver of §1, held by the openstreambox fork and
+limited to its release line; it is not part of the CeraLive owner exception above, and `main`
+does not carry it. Against §1: requirement 1 is the rationale in the ADR, section 2.4;
+requirement 2 is **not met** (not offered upstream yet; the patch records `Forwarded: no`);
+requirement 3 is an independent review of the change, with the fork owner's merge into the
+release line as the sign-off. Until that merge the patch is not carried. It is retired when
+upstream ModemManager accepts two-digit AcT values in these patterns.
+
 ## 2. Upstream-contribution-first
 
 For anything that is genuinely a modem-support improvement — udev rules, ModemManager
 plugins, device quirks, port-type hints — **the contribution goes upstream first**, except
-for the single dated FM350-GL owner exception recorded in §1.
+for the dated FM350-GL owner exception and the openstreambox release-line waiver for patch
+`0004`, both recorded in §1.
 
 - New device support, mode-switch quirks, and plugin changes are proposed to upstream
   ModemManager / the Debian packaging, not accreted as local carry.
